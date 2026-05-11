@@ -10,7 +10,7 @@
     "client": "cd client && npm run dev",
     "build": "cd client && npm run build",
     "install-all": "npm install && cd client && npm install",
-    "postinstall": "cd client && npm install && npm run build"
+    "postinstall": "cd client && npm install --include=dev && npm run build"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
