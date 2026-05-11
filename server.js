@@ -145,6 +145,105 @@ if (collegeCount.count === 0) {
   console.log('Seeded initial colleges')
 }
 
+// ── Data Backup/Restore System ────────────────────────
+const fs = require('fs')
+const path = require('path')
+
+// Auto-backup on startup (if data exists)
+function autoBackup() {
+  try {
+    const collegeCount = db.prepare('SELECT COUNT(*) as count FROM colleges').get()
+    const matchCount = db.prepare('SELECT COUNT(*) as count FROM matches').get()
+
+    if (collegeCount.count > 0 || matchCount.count > 0) {
+      const backupData = exportData()
+      const backupPath = path.join(__dirname, 'data-backup.json')
+      fs.writeFileSync(backupPath, JSON.stringify(backupData, null, 2))
+      console.log('📦 Auto-backup created:', backupPath)
+    }
+  } catch (error) {
+    console.error('❌ Auto-backup failed:', error.message)
+  }
+}
+
+// Auto-restore on startup (if backup exists and database is empty)
+function autoRestore() {
+  try {
+    const backupPath = path.join(__dirname, 'data-backup.json')
+    if (fs.existsSync(backupPath)) {
+      const collegeCount = db.prepare('SELECT COUNT(*) as count FROM colleges').get()
+      const matchCount = db.prepare('SELECT COUNT(*) as count FROM matches').get()
+
+      if (collegeCount.count === 0 && matchCount.count === 0) {
+        const backupData = JSON.parse(fs.readFileSync(backupPath, 'utf8'))
+        importData(backupData)
+        console.log('🔄 Auto-restored from backup:', backupPath)
+      }
+    }
+  } catch (error) {
+    console.error('❌ Auto-restore failed:', error.message)
+  }
+}
+
+// Export all data
+function exportData() {
+  return {
+    timestamp: new Date().toISOString(),
+    version: '1.0',
+    colleges: db.prepare('SELECT * FROM colleges ORDER BY id').all(),
+    matches: db.prepare('SELECT * FROM matches ORDER BY id').all(),
+    sports: db.prepare('SELECT * FROM sports ORDER BY sort_order').all()
+  }
+}
+
+// Import data (clears existing data first)
+function importData(data) {
+  // Clear existing data
+  db.prepare('DELETE FROM matches').run()
+  db.prepare('DELETE FROM colleges').run()
+  db.prepare('DELETE FROM sports').run()
+
+  // Reset auto-increment counters
+  db.prepare('DELETE FROM sqlite_sequence WHERE name IN ("colleges", "matches")').run()
+
+  // Import colleges
+  if (data.colleges && data.colleges.length > 0) {
+    const insertCollege = db.prepare('INSERT INTO colleges (id, full_name, short_name, created_at) VALUES (?, ?, ?, ?)')
+    data.colleges.forEach(college => {
+      insertCollege.run(college.id, college.full_name, college.short_name, college.created_at || new Date().toISOString())
+    })
+  }
+
+  // Import sports
+  if (data.sports && data.sports.length > 0) {
+    const insertSport = db.prepare('INSERT INTO sports (id, name, icon, description, sort_order) VALUES (?, ?, ?, ?, ?)')
+    data.sports.forEach(sport => {
+      insertSport.run(sport.id, sport.name, sport.icon, sport.description, sport.sort_order)
+    })
+  }
+
+  // Import matches
+  if (data.matches && data.matches.length > 0) {
+    const insertMatch = db.prepare(`
+      INSERT INTO matches (id, sport, gender, team_a_id, team_b_id, team_a_name, team_b_name,
+                          score_a, score_b, scheduled_time, venue, status, winner_id, extra_data, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+    data.matches.forEach(match => {
+      insertMatch.run(
+        match.id, match.sport, match.gender, match.team_a_id, match.team_b_id,
+        match.team_a_name, match.team_b_name, match.score_a, match.score_b,
+        match.scheduled_time, match.venue, match.status, match.winner_id,
+        match.extra_data, match.created_at, match.updated_at
+      )
+    })
+  }
+}
+
+// Initialize backup/restore system
+autoRestore() // Try to restore first
+autoBackup()  // Then backup current state
+
 // Socket.io authentication middleware
 io.use((socket, next) => {
   const token = socket.handshake.auth.token
@@ -591,6 +690,79 @@ app.put('/api/sports/:id', (req, res) => {
 app.delete('/api/sports/:id', (req, res) => {
   db.prepare('DELETE FROM sports WHERE id = ?').run(req.params.id)
   res.json({ success: true })
+})
+
+// ── Data Backup/Restore API Endpoints ──────────────────
+
+// Export all data as JSON
+app.get('/api/admin/export', (req, res) => {
+  try {
+    const data = exportData()
+    res.setHeader('Content-Type', 'application/json')
+    res.setHeader('Content-Disposition', 'attachment; filename="quadra-backup.json"')
+    res.json(data)
+  } catch (error) {
+    res.status(500).json({ error: 'Export failed: ' + error.message })
+  }
+})
+
+// Import data from JSON
+app.post('/api/admin/import', (req, res) => {
+  try {
+    const data = req.body
+    if (!data || !data.colleges || !data.matches || !data.sports) {
+      return res.status(400).json({ error: 'Invalid backup data format' })
+    }
+
+    importData(data)
+    autoBackup() // Create new backup after import
+
+    // Emit updates to all clients
+    io.emit('matches-updated')
+    io.emit('leaderboard-update')
+
+    res.json({
+      success: true,
+      message: `Imported ${data.colleges.length} colleges, ${data.matches.length} matches, ${data.sports.length} sports`
+    })
+  } catch (error) {
+    res.status(500).json({ error: 'Import failed: ' + error.message })
+  }
+})
+
+// Get backup status
+app.get('/api/admin/backup-status', (req, res) => {
+  try {
+    const backupPath = path.join(__dirname, 'data-backup.json')
+    const hasBackup = fs.existsSync(backupPath)
+
+    let backupInfo = null
+    if (hasBackup) {
+      const stats = fs.statSync(backupPath)
+      const data = JSON.parse(fs.readFileSync(backupPath, 'utf8'))
+      backupInfo = {
+        exists: true,
+        size: stats.size,
+        modified: stats.mtime.toISOString(),
+        colleges: data.colleges?.length || 0,
+        matches: data.matches?.length || 0,
+        sports: data.sports?.length || 0
+      }
+    }
+
+    const currentData = {
+      colleges: db.prepare('SELECT COUNT(*) as count FROM colleges').get().count,
+      matches: db.prepare('SELECT COUNT(*) as count FROM matches').get().count,
+      sports: db.prepare('SELECT COUNT(*) as count FROM sports').get().count
+    }
+
+    res.json({
+      backup: backupInfo,
+      current: currentData
+    })
+  } catch (error) {
+    res.status(500).json({ error: 'Status check failed: ' + error.message })
+  }
 })
 
 // SPA fallback for production

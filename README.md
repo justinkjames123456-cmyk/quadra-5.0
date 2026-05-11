@@ -142,13 +142,47 @@ The application uses Socket.io for instant updates:
 - Automatic reconnection handling
 - Live match indicators with pulsing animations
 
-## 📊 Points System
+## � Data Persistence & Backup
 
-- **Win**: 3 points
-- **Draw**: 1 point
-- **Loss**: 0 points
+**Problem Solved**: Render's free tier has ephemeral storage, so your SQLite database gets wiped on each deployment. This app now includes automatic backup/restore!
 
-Leaderboard is automatically calculated based on completed matches.
+### 🔄 Auto-Backup System
+- **On Startup**: Automatically restores data from `data-backup.json` if database is empty
+- **On Changes**: Creates backup file when data exists
+- **Persistent**: Backup file survives deployments
+
+### 📤 Manual Backup/Restore
+Access via **Admin Dashboard** → **Data Management** section:
+
+**Export Data:**
+- Click "Export Data" to download a JSON backup file
+- Contains all colleges, matches, sports, and scores
+- Filename: `quadra-backup-YYYY-MM-DD.json`
+
+**Import Data:**
+- Click "Import Data" to upload a backup file
+- **⚠️ Warning**: This replaces all current data
+- Perfect for migrating between deployments
+
+### 🛡️ Data Safety Features
+- ✅ **Auto-restore** on server restart
+- ✅ **Manual export/import** via admin panel
+- ✅ **Backup status** shows current vs backup data
+- ✅ **JSON format** - human-readable and portable
+- ✅ **Version control** - backup includes timestamps
+
+### 📋 Backup File Structure
+```json
+{
+  "timestamp": "2026-05-11T14:00:00.000Z",
+  "version": "1.0",
+  "colleges": [...],
+  "matches": [...],
+  "sports": [...]
+}
+```
+
+**Never lose tournament data again!** 🎯
 
 ## 📄 API Endpoints
 

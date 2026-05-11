@@ -6,14 +6,70 @@ import { useSocket } from '../../context/SocketContext'
 export default function AdminDashboard() {
   const navigate = useNavigate()
   const { adminToken, logoutAdmin } = useSocket()
-  const [stats, setStats] = useState({ colleges: 0, matches: 0, live: 0, completed: 0 })
-  const [sportsList, setSportsList] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [backupStatus, setBackupStatus] = useState(null)
+  const [backupLoading, setBackupLoading] = useState(false)
 
   useEffect(() => {
     if (!adminToken) { navigate('/realadmin'); return }
     fetchStats()
+    fetchBackupStatus()
   }, [adminToken, navigate])
+
+  const fetchBackupStatus = async () => {
+    try {
+      const res = await axios.get('/api/admin/backup-status', {
+        headers: { Authorization: `Bearer ${adminToken}` }
+      })
+      setBackupStatus(res.data)
+    } catch (e) { console.error('Backup status error:', e) }
+  }
+
+  const handleExport = async () => {
+    try {
+      setBackupLoading(true)
+      const res = await axios.get('/api/admin/export', {
+        headers: { Authorization: `Bearer ${adminToken}` },
+        responseType: 'blob'
+      })
+
+      const url = window.URL.createObjectURL(new Blob([res.data]))
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', `quadra-backup-${new Date().toISOString().split('T')[0]}.json`)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+    } catch (e) {
+      alert('Export failed: ' + e.message)
+    } finally {
+      setBackupLoading(false)
+    }
+  }
+
+  const handleImport = async (event) => {
+    const file = event.target.files[0]
+    if (!file) return
+
+    try {
+      setBackupLoading(true)
+      const text = await file.text()
+      const data = JSON.parse(text)
+
+      await axios.post('/api/admin/import', data, {
+        headers: { Authorization: `Bearer ${adminToken}` }
+      })
+
+      alert('Data imported successfully!')
+      fetchStats()
+      fetchBackupStatus()
+    } catch (e) {
+      alert('Import failed: ' + e.message)
+    } finally {
+      setBackupLoading(false)
+      event.target.value = '' // Reset file input
+    }
+  }
 
   const fetchStats = async () => {
     try {
@@ -119,8 +175,47 @@ export default function AdminDashboard() {
           ))}
         </div>
 
-        {/* Quick Links */}
-        <h2 className="text-base sm:text-xl font-bold mb-4 t-text">Quick Links</h2>
+        {/* Data Management */}
+        <h2 className="text-base sm:text-xl font-bold mb-4 t-text">Data Management</h2>
+        <div className="t-card rounded-xl p-4 sm:p-6 mb-8">
+          <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+            <div className="min-w-0 flex-1">
+              <h3 className="font-bold text-sm sm:text-base mb-1">Backup & Restore</h3>
+              <p className="text-xs sm:text-sm t-muted mb-2">
+                Export all tournament data or import from a backup file. Auto-backup runs on server restart.
+              </p>
+              {backupStatus && (
+                <div className="text-xs t-faint">
+                  Current: {backupStatus.current.colleges} colleges, {backupStatus.current.matches} matches
+                  {backupStatus.backup && (
+                    <span className="ml-2">• Backup: {backupStatus.backup.colleges} colleges, {backupStatus.backup.matches} matches</span>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="flex flex-col sm:flex-row gap-2 shrink-0">
+              <button
+                onClick={handleExport}
+                disabled={backupLoading}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white text-sm font-semibold rounded-lg transition-colors flex items-center gap-2"
+              >
+                <span>📤</span>
+                {backupLoading ? 'Exporting...' : 'Export Data'}
+              </button>
+              <label className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-lg transition-colors cursor-pointer flex items-center gap-2">
+                <span>📥</span>
+                Import Data
+                <input
+                  type="file"
+                  accept=".json"
+                  onChange={handleImport}
+                  className="hidden"
+                  disabled={backupLoading}
+                />
+              </label>
+            </div>
+          </div>
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <a href="/" target="_blank" rel="noopener noreferrer"
             className="t-card rounded-xl p-4 flex items-center gap-3 card-hover">

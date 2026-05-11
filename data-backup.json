@@ -1,0 +1,113 @@
+{
+  "timestamp": "2026-05-11T14:00:00.000Z",
+  "version": "1.0",
+  "colleges": [
+    {
+      "id": 1,
+      "full_name": "Government Medical College Alappuzha",
+      "short_name": "GMC Alappuzha",
+      "created_at": "2026-05-11T14:00:00.000Z"
+    },
+    {
+      "id": 2,
+      "full_name": "Amrita Institute of Medical Sciences",
+      "short_name": "Amrita",
+      "created_at": "2026-05-11T14:00:00.000Z"
+    },
+    {
+      "id": 3,
+      "full_name": "Government Medical College Kottayam",
+      "short_name": "GMC Kottayam",
+      "created_at": "2026-05-11T14:00:00.000Z"
+    },
+    {
+      "id": 4,
+      "full_name": "Government Medical College Thiruvananthapuram",
+      "short_name": "GMC TVM",
+      "created_at": "2026-05-11T14:00:00.000Z"
+    },
+    {
+      "id": 5,
+      "full_name": "Kerala Institute of Medical Sciences",
+      "short_name": "KIMS",
+      "created_at": "2026-05-11T14:00:00.000Z"
+    },
+    {
+      "id": 6,
+      "full_name": "Travancore Medical College",
+      "short_name": "TMC",
+      "created_at": "2026-05-11T14:00:00.000Z"
+    },
+    {
+      "id": 7,
+      "full_name": "Sree Gokulam Medical College",
+      "short_name": "SGMC",
+      "created_at": "2026-05-11T14:00:00.000Z"
+    },
+    {
+      "id": 8,
+      "full_name": "Jubilee Mission Medical College",
+      "short_name": "Jubilee",
+      "created_at": "2026-05-11T14:00:00.000Z"
+    }
+  ],
+  "matches": [],
+  "sports": [
+    {
+      "id": "football",
+      "name": "Football",
+      "icon": "⚽",
+      "description": "Men: 11-a-side | Women: 5-a-side (Futsal)",
+      "sort_order": 1
+    },
+    {
+      "id": "cricket",
+      "name": "Cricket",
+      "icon": "🏏",
+      "description": "Standard cricket rules apply",
+      "sort_order": 2
+    },
+    {
+      "id": "basketball",
+      "name": "Basketball",
+      "icon": "🏀",
+      "description": "5v5 standard rules",
+      "sort_order": 3
+    },
+    {
+      "id": "badminton",
+      "name": "Badminton",
+      "icon": "🏸",
+      "description": "Singles & Doubles",
+      "sort_order": 4
+    },
+    {
+      "id": "volleyball",
+      "name": "Volleyball",
+      "icon": "🏐",
+      "description": "6v6 indoor volleyball",
+      "sort_order": 5
+    },
+    {
+      "id": "kho-kho",
+      "name": "Kho Kho",
+      "icon": "🏃",
+      "description": "Traditional Indian tag game",
+      "sort_order": 6
+    },
+    {
+      "id": "table-tennis",
+      "name": "Table Tennis",
+      "icon": "🏓",
+      "description": "Singles & Doubles",
+      "sort_order": 7
+    },
+    {
+      "id": "chess",
+      "name": "Chess",
+      "icon": "♟️",
+      "description": "Mixed teams allowed",
+      "sort_order": 8
+    }
+  ]
+}
