@@ -85,6 +85,18 @@ npm start
 
 The application will be available at `http://localhost:3001`
 
+## 🌐 Deploy to the Internet (Render)
+
+Want to host your tournament online so anyone can access it? Follow our **[Render Deployment Guide](./RENDER_DEPLOYMENT.md)** - it takes just 15-20 minutes!
+
+**Benefits:**
+- ✅ Free hosting with Render
+- ✅ No technical knowledge needed
+- ✅ Automatic updates when you push to GitHub
+- ✅ Your tournament goes live instantly
+
+[👉 Click here for deployment steps](./RENDER_DEPLOYMENT.md)
+
 ## 📋 Default Data
 
 The application comes pre-loaded with sample colleges:
