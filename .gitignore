@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+client/node_modules/
+
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+
+# Database
+tournament.db
+*.db
+*.sqlite
+
+# Build output
+client/dist/
+client/build/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+files.txt
+*.log
+*.tmp
+
+# OS junk
+Thumbs.db
+.DS_Store
+
+# Large assets (optional – remove if you want to keep PDF/images)
+*.pdf
+*.avif
+*.jpg
+*.png
+!logo.png
+!5.0.png
