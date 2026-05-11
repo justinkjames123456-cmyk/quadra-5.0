@@ -3,6 +3,7 @@ const http = require('http')
 const { Server } = require('socket.io')
 const Database = require('better-sqlite3')
 const cors = require('cors')
+const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
 require('dotenv').config()
@@ -146,8 +147,6 @@ if (collegeCount.count === 0) {
 }
 
 // ── Data Backup/Restore System ────────────────────────
-const fs = require('fs')
-const path = require('path')
 
 // Auto-backup on startup (if data exists)
 function autoBackup() {
