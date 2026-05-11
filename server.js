@@ -195,48 +195,58 @@ function exportData() {
   }
 }
 
+function sqliteSequenceExists() {
+  return !!db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='sqlite_sequence'").get()
+}
+
 // Import data (clears existing data first)
 function importData(data) {
-  // Clear existing data
-  db.prepare('DELETE FROM matches').run()
-  db.prepare('DELETE FROM colleges').run()
-  db.prepare('DELETE FROM sports').run()
+  const importTransaction = db.transaction((payload) => {
+    // Clear existing data
+    db.prepare('DELETE FROM matches').run()
+    db.prepare('DELETE FROM colleges').run()
+    db.prepare('DELETE FROM sports').run()
 
-  // Reset auto-increment counters
-  db.prepare('DELETE FROM sqlite_sequence WHERE name IN ("colleges", "matches")').run()
+    // Reset auto-increment counters if sqlite_sequence exists
+    if (sqliteSequenceExists()) {
+      db.prepare('DELETE FROM sqlite_sequence WHERE name IN ("colleges", "matches", "sports")').run()
+    }
 
-  // Import colleges
-  if (data.colleges && data.colleges.length > 0) {
-    const insertCollege = db.prepare('INSERT INTO colleges (id, full_name, short_name, created_at) VALUES (?, ?, ?, ?)')
-    data.colleges.forEach(college => {
-      insertCollege.run(college.id, college.full_name, college.short_name, college.created_at || new Date().toISOString())
-    })
-  }
+    // Import colleges
+    if (payload.colleges && payload.colleges.length > 0) {
+      const insertCollege = db.prepare('INSERT INTO colleges (id, full_name, short_name, created_at) VALUES (?, ?, ?, ?)')
+      payload.colleges.forEach(college => {
+        insertCollege.run(college.id, college.full_name, college.short_name, college.created_at || new Date().toISOString())
+      })
+    }
 
-  // Import sports
-  if (data.sports && data.sports.length > 0) {
-    const insertSport = db.prepare('INSERT INTO sports (id, name, icon, description, sort_order) VALUES (?, ?, ?, ?, ?)')
-    data.sports.forEach(sport => {
-      insertSport.run(sport.id, sport.name, sport.icon, sport.description, sport.sort_order)
-    })
-  }
+    // Import sports
+    if (payload.sports && payload.sports.length > 0) {
+      const insertSport = db.prepare('INSERT INTO sports (id, name, icon, description, sort_order) VALUES (?, ?, ?, ?, ?)')
+      payload.sports.forEach(sport => {
+        insertSport.run(sport.id, sport.name, sport.icon, sport.description, sport.sort_order)
+      })
+    }
 
-  // Import matches
-  if (data.matches && data.matches.length > 0) {
-    const insertMatch = db.prepare(`
-      INSERT INTO matches (id, sport, gender, team_a_id, team_b_id, team_a_name, team_b_name,
-                          score_a, score_b, scheduled_time, venue, status, winner_id, extra_data, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `)
-    data.matches.forEach(match => {
-      insertMatch.run(
-        match.id, match.sport, match.gender, match.team_a_id, match.team_b_id,
-        match.team_a_name, match.team_b_name, match.score_a, match.score_b,
-        match.scheduled_time, match.venue, match.status, match.winner_id,
-        match.extra_data, match.created_at, match.updated_at
-      )
-    })
-  }
+    // Import matches
+    if (payload.matches && payload.matches.length > 0) {
+      const insertMatch = db.prepare(`
+        INSERT INTO matches (id, sport, gender, team_a_id, team_b_id, team_a_name, team_b_name,
+                            score_a, score_b, scheduled_time, venue, status, winner_id, extra_data, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      payload.matches.forEach(match => {
+        insertMatch.run(
+          match.id, match.sport, match.gender, match.team_a_id, match.team_b_id,
+          match.team_a_name, match.team_b_name, match.score_a, match.score_b,
+          match.scheduled_time, match.venue, match.status, match.winner_id,
+          match.extra_data, match.created_at || new Date().toISOString(), match.updated_at || new Date().toISOString()
+        )
+      })
+    }
+  })
+
+  importTransaction(data)
 }
 
 // Initialize backup/restore system
@@ -709,7 +719,7 @@ app.get('/api/admin/export', (req, res) => {
 app.post('/api/admin/import', (req, res) => {
   try {
     const data = req.body
-    if (!data || !data.colleges || !data.matches || !data.sports) {
+    if (!data || !Array.isArray(data.colleges) || !Array.isArray(data.matches) || !Array.isArray(data.sports)) {
       return res.status(400).json({ error: 'Invalid backup data format' })
     }
 
@@ -725,6 +735,7 @@ app.post('/api/admin/import', (req, res) => {
       message: `Imported ${data.colleges.length} colleges, ${data.matches.length} matches, ${data.sports.length} sports`
     })
   } catch (error) {
+    console.error('Import failed:', error)
     res.status(500).json({ error: 'Import failed: ' + error.message })
   }
 })
