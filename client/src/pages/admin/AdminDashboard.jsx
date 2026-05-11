@@ -6,11 +6,19 @@ import { useSocket } from '../../context/SocketContext'
 export default function AdminDashboard() {
   const navigate = useNavigate()
   const { adminToken, logoutAdmin } = useSocket()
+  const [stats, setStats] = useState({ colleges: 0, matches: 0, live: 0, completed: 0 })
+  const [sportsList, setSportsList] = useState([])
+  const [loading, setLoading] = useState(true)
   const [backupStatus, setBackupStatus] = useState(null)
   const [backupLoading, setBackupLoading] = useState(false)
+  const [authChecked, setAuthChecked] = useState(false)
 
   useEffect(() => {
-    if (!adminToken) { navigate('/realadmin'); return }
+    if (!adminToken) {
+      navigate('/realadmin')
+      return
+    }
+    setAuthChecked(true)
     fetchStats()
     fetchBackupStatus()
   }, [adminToken, navigate])
@@ -90,7 +98,25 @@ export default function AdminDashboard() {
     finally { setLoading(false) }
   }
 
-  if (!adminToken) return null
+  if (!authChecked) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4" style={{ background: 'var(--bg)', color: 'var(--text)' }}>
+        <div className="text-center">
+          <p className="text-sm t-muted">Checking admin session...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!adminToken) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4" style={{ background: 'var(--bg)', color: 'var(--text)' }}>
+        <div className="text-center">
+          <p className="text-sm t-muted">Admin session not found. Redirecting to login...</p>
+        </div>
+      </div>
+    )
+  }
 
   const STAT_CARDS = [
     { icon: '🏫', val: stats.colleges,  label: 'Colleges',       color: 'var(--accent)'  },
