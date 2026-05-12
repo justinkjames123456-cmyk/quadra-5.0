@@ -172,15 +172,37 @@ const useSupabaseDb = Boolean(SUPABASE_DB_URL)
 const supabase = useSupabaseBackup
   ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
   : null
-const supabaseDb = useSupabaseDb
+let supabaseDb = useSupabaseDb
   ? new Client({ connectionString: SUPABASE_DB_URL, ssl: { rejectUnauthorized: false } })
   : null
 let supabaseDbConnected = false
 
+function createSupabaseDbClient() {
+  if (!useSupabaseDb) return null
+  return new Client({ connectionString: SUPABASE_DB_URL, ssl: { rejectUnauthorized: false } })
+}
+
 async function connectSupabaseDb() {
-  if (!supabaseDb) return false
+  if (!useSupabaseDb) return false
+  if (supabaseDb) {
+    try {
+      await supabaseDb.end()
+    } catch (error) {
+      // ignore cleanup errors, create a fresh client
+    }
+  }
+  supabaseDb = createSupabaseDbClient()
+
   try {
     await supabaseDb.connect()
+    supabaseDb.on('error', (error) => {
+      supabaseDbConnected = false
+      console.error('❌ Supabase DB client error:', error.message || error)
+    })
+    supabaseDb.on('end', () => {
+      supabaseDbConnected = false
+      console.warn('⚠️ Supabase DB client disconnected')
+    })
     await ensureSupabaseDbTables()
     supabaseDbConnected = true
     console.log('✅ Supabase Postgres connected')
@@ -192,10 +214,33 @@ async function connectSupabaseDb() {
   }
 }
 
+async function querySupabaseDb(text, params = []) {
+  if (!useSupabaseDb) throw new Error('Supabase DB is not configured')
+  if (!supabaseDbConnected) {
+    const connected = await connectSupabaseDb()
+    if (!connected) throw new Error('Supabase DB is not connected')
+  }
+
+  try {
+    return await supabaseDb.query(text, params)
+  } catch (error) {
+    const message = error.message || String(error)
+    if (message.includes('Connection terminated unexpectedly') || message.includes('Client was closed') || message.includes('Connection not open')) {
+      supabaseDbConnected = false
+      console.warn('⚠️ Supabase DB connection lost, retrying...')
+      const reconnected = await connectSupabaseDb()
+      if (reconnected) {
+        return await supabaseDb.query(text, params)
+      }
+    }
+    throw error
+  }
+}
+
 async function ensureSupabaseDbTables() {
   if (!supabaseDb) return
 
-  await supabaseDb.query(`
+  await querySupabaseDb(`
     CREATE TABLE IF NOT EXISTS colleges (
       id SERIAL PRIMARY KEY,
       full_name TEXT NOT NULL,
@@ -204,7 +249,7 @@ async function ensureSupabaseDbTables() {
     )
   `)
 
-  await supabaseDb.query(`
+  await querySupabaseDb(`
     CREATE TABLE IF NOT EXISTS sports (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -214,7 +259,7 @@ async function ensureSupabaseDbTables() {
     )
   `)
 
-  await supabaseDb.query(`
+  await querySupabaseDb(`
     CREATE TABLE IF NOT EXISTS matches (
       id SERIAL PRIMARY KEY,
       sport TEXT NOT NULL,
@@ -239,7 +284,7 @@ async function ensureSupabaseDbTables() {
 }
 
 async function restoreFromSupabaseDbIfEmpty() {
-  if (!supabaseDb) return false
+  if (!useSupabaseDb) return false
 
   const localCollegeCount = db.prepare('SELECT COUNT(*) as count FROM colleges').get().count
   const localMatchCount = db.prepare('SELECT COUNT(*) as count FROM matches').get().count
@@ -247,9 +292,9 @@ async function restoreFromSupabaseDbIfEmpty() {
   if (localCollegeCount > 0 || localMatchCount > 0) return false
 
   try {
-    const { rows: sports } = await supabaseDb.query('SELECT * FROM sports ORDER BY sort_order ASC, name ASC')
-    const { rows: colleges } = await supabaseDb.query('SELECT * FROM colleges ORDER BY id ASC')
-    const { rows: matches } = await supabaseDb.query('SELECT * FROM matches ORDER BY id ASC')
+    const { rows: sports } = await querySupabaseDb('SELECT * FROM sports ORDER BY sort_order ASC, name ASC')
+    const { rows: colleges } = await querySupabaseDb('SELECT * FROM colleges ORDER BY id ASC')
+    const { rows: matches } = await querySupabaseDb('SELECT * FROM matches ORDER BY id ASC')
 
     if (sports.length === 0 && colleges.length === 0 && matches.length === 0) {
       return false
@@ -265,16 +310,21 @@ async function restoreFromSupabaseDbIfEmpty() {
 }
 
 async function syncImportToSupabase(data) {
-  if (!supabaseDb) return { success: true, message: 'No Supabase DB configured' }
+  if (!useSupabaseDb) return { success: true, message: 'No Supabase DB configured' }
+
+  const uniqueById = (items = []) => [...new Map((items || []).map(item => [item.id, item])).values()]
+  const colleges = uniqueById(data.colleges)
+  const sports = uniqueById(data.sports)
+  const matches = uniqueById(data.matches)
 
   try {
-    await supabaseDb.query('BEGIN')
-    await supabaseDb.query('DELETE FROM matches')
-    await supabaseDb.query('DELETE FROM colleges')
-    await supabaseDb.query('DELETE FROM sports')
+    await querySupabaseDb('BEGIN')
+    await querySupabaseDb('DELETE FROM matches')
+    await querySupabaseDb('DELETE FROM colleges')
+    await querySupabaseDb('DELETE FROM sports')
 
-    for (const college of data.colleges) {
-      await supabaseDb.query(
+    for (const college of colleges) {
+      await querySupabaseDb(
         `INSERT INTO colleges (id, full_name, short_name, created_at)
          VALUES ($1, $2, $3, $4)
          ON CONFLICT (id) DO UPDATE SET full_name = EXCLUDED.full_name, short_name = EXCLUDED.short_name, created_at = EXCLUDED.created_at`,
@@ -282,8 +332,8 @@ async function syncImportToSupabase(data) {
       )
     }
 
-    for (const sport of data.sports) {
-      await supabaseDb.query(
+    for (const sport of sports) {
+      await querySupabaseDb(
         `INSERT INTO sports (id, name, icon, description, sort_order)
          VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, icon = EXCLUDED.icon, description = EXCLUDED.description, sort_order = EXCLUDED.sort_order`,
@@ -291,8 +341,8 @@ async function syncImportToSupabase(data) {
       )
     }
 
-    for (const match of data.matches) {
-      await supabaseDb.query(
+    for (const match of matches) {
+      await querySupabaseDb(
         `INSERT INTO matches (id, sport, gender, team_a_id, team_b_id, team_a_name, team_b_name,
          score_a, score_b, scheduled_time, venue, status, winner_id, extra_data, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
@@ -318,22 +368,22 @@ async function syncImportToSupabase(data) {
       )
     }
 
-    await supabaseDb.query(`SELECT setval(pg_get_serial_sequence('colleges','id'), COALESCE(MAX(id), 1), true) FROM colleges`)
-    await supabaseDb.query(`SELECT setval(pg_get_serial_sequence('matches','id'), COALESCE(MAX(id), 1), true) FROM matches`)
+    await querySupabaseDb(`SELECT setval(pg_get_serial_sequence('colleges','id'), COALESCE(MAX(id), 1), true) FROM colleges`)
+    await querySupabaseDb(`SELECT setval(pg_get_serial_sequence('matches','id'), COALESCE(MAX(id), 1), true) FROM matches`)
 
-    await supabaseDb.query('COMMIT')
+    await querySupabaseDb('COMMIT')
     return { success: true, message: 'Supabase DB synchronized with local data' }
   } catch (error) {
-    await supabaseDb.query('ROLLBACK').catch(() => {})
+    await querySupabaseDb('ROLLBACK').catch(() => {})
     console.error('❌ Supabase DB import sync failed:', error.message || error)
     return { success: false, message: error.message || 'Supabase DB sync failed' }
   }
 }
 
 async function syncSingleCollegeToSupabase(college) {
-  if (!supabaseDb) return { success: true }
+  if (!useSupabaseDb) return { success: true }
   try {
-    await supabaseDb.query(
+    await querySupabaseDb(
       `INSERT INTO colleges (id, full_name, short_name, created_at)
        VALUES ($1, $2, $3, $4)
        ON CONFLICT (id) DO UPDATE SET full_name = EXCLUDED.full_name, short_name = EXCLUDED.short_name, created_at = EXCLUDED.created_at`,
@@ -347,9 +397,9 @@ async function syncSingleCollegeToSupabase(college) {
 }
 
 async function syncSingleSportToSupabase(sport) {
-  if (!supabaseDb) return { success: true }
+  if (!useSupabaseDb) return { success: true }
   try {
-    await supabaseDb.query(
+    await querySupabaseDb(
       `INSERT INTO sports (id, name, icon, description, sort_order)
        VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, icon = EXCLUDED.icon, description = EXCLUDED.description, sort_order = EXCLUDED.sort_order`,
@@ -363,9 +413,9 @@ async function syncSingleSportToSupabase(sport) {
 }
 
 async function syncSingleMatchToSupabase(match) {
-  if (!supabaseDb) return { success: true }
+  if (!useSupabaseDb) return { success: true }
   try {
-    await supabaseDb.query(
+    await querySupabaseDb(
       `INSERT INTO matches (id, sport, gender, team_a_id, team_b_id, team_a_name, team_b_name,
        score_a, score_b, scheduled_time, venue, status, winner_id, extra_data, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
@@ -397,9 +447,9 @@ async function syncSingleMatchToSupabase(match) {
 }
 
 async function deleteFromSupabaseTable(table, id) {
-  if (!supabaseDb) return { success: true }
+  if (!useSupabaseDb) return { success: true }
   try {
-    await supabaseDb.query(`DELETE FROM ${table} WHERE id = $1`, [id])
+    await querySupabaseDb(`DELETE FROM ${table} WHERE id = $1`, [id])
     return { success: true }
   } catch (error) {
     console.error(`❌ Supabase DB delete from ${table} failed:`, error.message || error)
@@ -417,13 +467,13 @@ function emitSupabaseSyncStatus(payload) {
 }
 
 async function syncLocalDatabaseToSupabase() {
-  if (!supabaseDb) return { success: true, message: 'No Supabase DB configured' }
+  if (!useSupabaseDb) return { success: true, message: 'No Supabase DB configured' }
   const data = exportData()
   return syncImportToSupabase(data)
 }
 
 async function ensureSupabaseDatabaseMirror() {
-  if (!supabaseDb) return
+  if (!useSupabaseDb) return
 
   const localCollegeCount = db.prepare('SELECT COUNT(*) as count FROM colleges').get().count
   const localMatchCount = db.prepare('SELECT COUNT(*) as count FROM matches').get().count
@@ -1195,7 +1245,12 @@ app.get('/api/admin/backup-status', async (req, res) => {
       supabase: {
         backupConfigured: useSupabaseBackup,
         dbConfigured: useSupabaseDb,
-        dbConnected: !!dbConnected
+        dbConnected: !!dbConnected,
+        checkedAt: new Date().toISOString(),
+        projectUrl: SUPABASE_URL ? SUPABASE_URL.replace(/\/$/, '') : null,
+        connectionMessage: useSupabaseDb
+          ? (dbConnected ? 'Postgres connected' : 'Postgres configured but disconnected')
+          : 'Supabase Postgres not configured'
       }
     })
   } catch (error) {

@@ -1,6 +1,6 @@
 {
   "name": "quadra-5.0-tournament",
-  "version": "1.0.0",
+  "version": "5.1.0",
   "description": "QUADRA 5.0 - Intercollegiate Sports Tournament Management System",
   "main": "server.js",
   "scripts": {

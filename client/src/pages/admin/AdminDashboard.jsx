@@ -162,7 +162,7 @@ export default function AdminDashboard() {
               <img src="/logo.png" alt="QUADRA" className="h-9 w-auto object-contain shrink-0" />
               <div className="min-w-0">
                 <h1 className="text-base sm:text-lg font-bold gradient-text truncate">Admin Dashboard</h1>
-                <p className="text-xs t-faint hidden sm:block">QUADRA 5.0 Management</p>
+                <p className="text-xs t-faint hidden sm:block">QUADRA 5.0 Management · Version 5.1</p>
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
@@ -238,13 +238,34 @@ export default function AdminDashboard() {
                 </div>
               )}
               {supabaseStatus && (
-                <div className="text-xs t-faint mt-3">
-                  <span className="font-semibold">Supabase status:</span>
-                  <span className={`ml-2 ${supabaseStatus.dbConnected ? 'text-emerald-300' : 'text-rose-300'}`}>
-                    {supabaseStatus.dbConnected ? 'Connected' : 'Disconnected'}
-                  </span>
-                  <span className="ml-3">DB {supabaseStatus.dbConfigured ? 'configured' : 'not configured'}</span>
-                  <span className="ml-3">Storage {supabaseStatus.backupConfigured ? 'configured' : 'not configured'}</span>
+                <div className="text-xs t-faint mt-3 space-y-2">
+                  <div>
+                    <span className="font-semibold">Supabase health:</span>
+                    <span className={`ml-2 ${supabaseStatus.dbConnected ? 'text-emerald-300' : 'text-rose-300'}`}>
+                      {supabaseStatus.connectionMessage || (supabaseStatus.dbConnected ? 'Connected' : 'Disconnected')}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="font-semibold">DB:</span>
+                    <span className={`ml-2 ${supabaseStatus.dbConfigured ? 'text-emerald-300' : 'text-rose-300'}`}>
+                      {supabaseStatus.dbConfigured ? 'Configured' : 'Not configured'}
+                    </span>
+                    <span className="ml-3">Storage:</span>
+                    <span className={`ml-2 ${supabaseStatus.backupConfigured ? 'text-emerald-300' : 'text-rose-300'}`}>
+                      {supabaseStatus.backupConfigured ? 'Configured' : 'Not configured'}
+                    </span>
+                  </div>
+                  {supabaseStatus.projectUrl && (
+                    <div>
+                      <span className="font-semibold">Project:</span>
+                      <span className="ml-2 text-gray-300 break-all">{supabaseStatus.projectUrl}</span>
+                    </div>
+                  )}
+                  {supabaseStatus.checkedAt && (
+                    <div className="text-[11px] t-faint">
+                      Last checked: {new Date(supabaseStatus.checkedAt).toLocaleString()}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
