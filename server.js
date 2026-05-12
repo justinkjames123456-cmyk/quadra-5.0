@@ -60,6 +60,20 @@ if (process.env.NODE_ENV === 'production') {
 
 // Database setup
 const db = new Database('tournament.db')
+const supabaseSyncHistory = []
+const MAX_SYNC_HISTORY = 20
+
+function recordSupabaseSyncEvent(event) {
+  const entry = {
+    id: crypto.randomUUID(),
+    timestamp: new Date().toISOString(),
+    ...event
+  }
+  supabaseSyncHistory.unshift(entry)
+  if (supabaseSyncHistory.length > MAX_SYNC_HISTORY) {
+    supabaseSyncHistory.length = MAX_SYNC_HISTORY
+  }
+}
 
 // Initialize tables
 db.exec(`
@@ -391,7 +405,12 @@ async function deleteFromSupabaseTable(table, id) {
 }
 
 function emitSupabaseSyncStatus(payload) {
-  io.emit('supabase-sync-status', payload)
+  const event = {
+    ...payload,
+    timestamp: new Date().toISOString()
+  }
+  recordSupabaseSyncEvent(event)
+  io.emit('supabase-sync-status', event)
 }
 
 async function syncLocalDatabaseToSupabase() {
@@ -1168,6 +1187,14 @@ app.get('/api/admin/backup-status', (req, res) => {
     })
   } catch (error) {
     res.status(500).json({ error: 'Status check failed: ' + error.message })
+  }
+})
+
+app.get('/api/admin/supabase-sync-history', (req, res) => {
+  try {
+    res.json({ history: supabaseSyncHistory })
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to load sync history: ' + error.message })
   }
 })
 

@@ -11,6 +11,8 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true)
   const [backupStatus, setBackupStatus] = useState(null)
   const [backupLoading, setBackupLoading] = useState(false)
+  const [syncHistory, setSyncHistory] = useState([])
+  const [historyLoading, setHistoryLoading] = useState(true)
   const [authChecked, setAuthChecked] = useState(false)
 
   useEffect(() => {
@@ -21,6 +23,7 @@ export default function AdminDashboard() {
     setAuthChecked(true)
     fetchStats()
     fetchBackupStatus()
+    fetchSyncHistory()
   }, [adminToken, navigate])
 
   const fetchBackupStatus = async () => {
@@ -76,6 +79,20 @@ export default function AdminDashboard() {
     } finally {
       setBackupLoading(false)
       event.target.value = '' // Reset file input
+    }
+  }
+
+  const fetchSyncHistory = async () => {
+    if (!adminToken) return
+    try {
+      const res = await axios.get('/api/admin/supabase-sync-history', {
+        headers: { Authorization: `Bearer ${adminToken}` }
+      })
+      setSyncHistory(res.data.history || [])
+    } catch (e) {
+      console.error('Sync history error:', e)
+    } finally {
+      setHistoryLoading(false)
     }
   }
 
@@ -242,6 +259,46 @@ export default function AdminDashboard() {
             </div>
           </div>
         </div>
+
+        {/* Supabase Sync History */}
+        <div className="t-card rounded-xl p-4 sm:p-6 mb-8">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
+            <div>
+              <h3 className="font-bold text-sm sm:text-base">Supabase Sync History</h3>
+              <p className="text-xs sm:text-sm t-muted">See the latest Supabase mirror operations and whether each sync succeeded.</p>
+            </div>
+            <button
+              onClick={fetchSyncHistory}
+              disabled={historyLoading}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white text-sm font-semibold rounded-lg transition-colors"
+            >
+              Refresh
+            </button>
+          </div>
+          {historyLoading ? (
+            <div className="flex items-center justify-center py-8"><div className="spinner"></div></div>
+          ) : syncHistory.length === 0 ? (
+            <div className="text-sm t-muted py-6">No Supabase sync events have been recorded yet.</div>
+          ) : (
+            <div className="space-y-3">
+              {syncHistory.map(event => (
+                <div key={event.id} className="rounded-xl border border-white/10 p-3 bg-white/5">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold">{event.operation.replace(/-/g, ' ')}</p>
+                      <p className="text-xs t-muted">{event.message || 'No message available'}</p>
+                    </div>
+                    <span className={`text-xs font-semibold ${event.success ? 'text-emerald-300' : 'text-rose-300'}`}>
+                      {event.success ? 'Success' : 'Failed'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] t-faint mt-2">{new Date(event.timestamp).toLocaleString()}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <a href="/" target="_blank" rel="noopener noreferrer"
             className="t-card rounded-xl p-4 flex items-center gap-3 card-hover">
