@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import { useSocket } from '../../context/SocketContext'
+import ThemeToggle from '../../components/ThemeToggle'
 
 export default function AdminDashboard() {
   const navigate = useNavigate()
@@ -157,6 +158,7 @@ export default function AdminDashboard() {
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
+              <ThemeToggle />
               <a href="/" target="_blank" rel="noopener noreferrer"
                 className="hidden sm:flex px-3 py-1.5 glass rounded-lg text-xs font-semibold t-muted hover:t-text transition-colors"
                 style={{ border: '1px solid var(--border)' }}>

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import { useSocket } from '../../context/SocketContext'
+import ThemeToggle from '../../components/ThemeToggle'
 
 export default function AdminLogin() {
   const [password, setPassword] = useState('')
@@ -32,6 +33,9 @@ export default function AdminLogin() {
       style={{ background: 'var(--bg)' }}>
       <div className="w-full max-w-sm rounded-2xl p-8"
         style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: '0 8px 40px rgba(0,0,0,0.12)' }}>
+        <div className="flex justify-end mb-4">
+          <ThemeToggle />
+        </div>
 
         <div className="text-center mb-8">
           <img src="/logo.png" alt="QUADRA 5.0" className="h-20 mx-auto mb-4 object-contain" />

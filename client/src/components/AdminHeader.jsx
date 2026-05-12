@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { useSocket } from '../context/SocketContext'
+import ThemeToggle from './ThemeToggle'
 
 export default function AdminHeader({ title, subtitle, backTo, backLabel }) {
   const navigate = useNavigate()
@@ -33,6 +34,7 @@ export default function AdminHeader({ title, subtitle, backTo, backLabel }) {
 
           {/* Right: actions */}
           <div className="flex items-center gap-2 shrink-0">
+            <ThemeToggle />
             {backTo !== '/realadmin/dashboard' && (
               <button onClick={() => navigate('/realadmin/dashboard')}
                 className="px-3 py-1.5 glass border border-gray-600 text-gray-300 rounded-lg hover:bg-white/5 transition-colors text-xs font-semibold">
