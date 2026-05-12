@@ -14,6 +14,7 @@ export const useSocket = () => {
 export const SocketProvider = ({ children }) => {
   const [socket, setSocket] = useState(null)
   const [isConnected, setIsConnected] = useState(false)
+  const [supabaseSyncStatus, setSupabaseSyncStatus] = useState(null)
   const [adminToken, setAdminToken] = useState(localStorage.getItem('adminToken'))
   const socketRef = useRef(null)
 
@@ -36,6 +37,10 @@ export const SocketProvider = ({ children }) => {
 
     newSocket.on('connect_error', (error) => {
       console.error('Socket connection error:', error)
+    })
+
+    newSocket.on('supabase-sync-status', (status) => {
+      setSupabaseSyncStatus(status)
     })
 
     socketRef.current = newSocket
@@ -87,6 +92,7 @@ export const SocketProvider = ({ children }) => {
     socket,
     isConnected,
     adminToken,
+    supabaseSyncStatus,
     authenticateAdmin,
     logoutAdmin,
     joinMatchRoom,

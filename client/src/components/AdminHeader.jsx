@@ -3,7 +3,7 @@ import { useSocket } from '../context/SocketContext'
 
 export default function AdminHeader({ title, subtitle, backTo, backLabel }) {
   const navigate = useNavigate()
-  const { logoutAdmin } = useSocket()
+  const { logoutAdmin, supabaseSyncStatus } = useSocket()
 
   const handleLogout = () => {
     logoutAdmin()
@@ -46,6 +46,14 @@ export default function AdminHeader({ title, subtitle, backTo, backLabel }) {
           </div>
         </div>
       </div>
+      {supabaseSyncStatus && (
+        <div className="border-t border-gray-800 py-2 px-4 bg-black/40 text-sm text-gray-200">
+          <strong className={supabaseSyncStatus.success ? 'text-green-300' : 'text-red-300'}>
+            {supabaseSyncStatus.success ? 'Supabase sync' : 'Supabase sync error'}:
+          </strong>
+          <span className="ml-2">{supabaseSyncStatus.message || 'No details available'}</span>
+        </div>
+      )}
     </header>
   )
 }

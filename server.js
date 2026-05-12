@@ -6,6 +6,8 @@ const cors = require('cors')
 const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
+const { createClient } = require('@supabase/supabase-js')
+const { Client } = require('pg')
 require('dotenv').config()
 
 const app = express()
@@ -147,9 +149,375 @@ if (collegeCount.count === 0) {
 }
 
 // ── Data Backup/Restore System ────────────────────────
+const SUPABASE_URL = process.env.SUPABASE_URL
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
+const SUPABASE_DB_URL = process.env.SUPABASE_DB_URL || process.env.DATABASE_URL
+const SUPABASE_BUCKET = 'quadra-backups'
+const useSupabaseBackup = Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY)
+const useSupabaseDb = Boolean(SUPABASE_DB_URL)
+const supabase = useSupabaseBackup
+  ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+  : null
+const supabaseDb = useSupabaseDb
+  ? new Client({ connectionString: SUPABASE_DB_URL, ssl: { rejectUnauthorized: false } })
+  : null
 
-// Auto-backup on startup (if data exists)
-function autoBackup() {
+async function connectSupabaseDb() {
+  if (!supabaseDb) return false
+  try {
+    await supabaseDb.connect()
+    await ensureSupabaseDbTables()
+    console.log('✅ Supabase Postgres connected')
+    return true
+  } catch (error) {
+    console.error('❌ Supabase Postgres connection failed:', error.message || error)
+    return false
+  }
+}
+
+async function ensureSupabaseDbTables() {
+  if (!supabaseDb) return
+
+  await supabaseDb.query(`
+    CREATE TABLE IF NOT EXISTS colleges (
+      id SERIAL PRIMARY KEY,
+      full_name TEXT NOT NULL,
+      short_name TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `)
+
+  await supabaseDb.query(`
+    CREATE TABLE IF NOT EXISTS sports (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      icon TEXT DEFAULT '🏆',
+      description TEXT DEFAULT '',
+      sort_order INTEGER DEFAULT 0
+    )
+  `)
+
+  await supabaseDb.query(`
+    CREATE TABLE IF NOT EXISTS matches (
+      id SERIAL PRIMARY KEY,
+      sport TEXT NOT NULL,
+      gender TEXT NOT NULL DEFAULT 'men',
+      team_a_id INTEGER,
+      team_b_id INTEGER,
+      team_a_name TEXT,
+      team_b_name TEXT,
+      score_a INTEGER DEFAULT 0,
+      score_b INTEGER DEFAULT 0,
+      scheduled_time TIMESTAMPTZ,
+      venue TEXT,
+      status TEXT DEFAULT 'upcoming',
+      winner_id INTEGER,
+      extra_data TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      FOREIGN KEY (team_a_id) REFERENCES colleges(id),
+      FOREIGN KEY (team_b_id) REFERENCES colleges(id)
+    )
+  `)
+}
+
+async function restoreFromSupabaseDbIfEmpty() {
+  if (!supabaseDb) return false
+
+  const localCollegeCount = db.prepare('SELECT COUNT(*) as count FROM colleges').get().count
+  const localMatchCount = db.prepare('SELECT COUNT(*) as count FROM matches').get().count
+  const localSportCount = db.prepare('SELECT COUNT(*) as count FROM sports').get().count
+  if (localCollegeCount > 0 || localMatchCount > 0 || localSportCount > 0) return false
+
+  try {
+    const { rows: sports } = await supabaseDb.query('SELECT * FROM sports ORDER BY sort_order ASC, name ASC')
+    const { rows: colleges } = await supabaseDb.query('SELECT * FROM colleges ORDER BY id ASC')
+    const { rows: matches } = await supabaseDb.query('SELECT * FROM matches ORDER BY id ASC')
+
+    if (sports.length === 0 && colleges.length === 0 && matches.length === 0) {
+      return false
+    }
+
+    importData({ colleges, matches, sports })
+    console.log('🔄 Restored local data from Supabase Postgres')
+    return true
+  } catch (error) {
+    console.error('❌ Supabase DB restore failed:', error.message || error)
+    return false
+  }
+}
+
+async function syncImportToSupabase(data) {
+  if (!supabaseDb) return { success: true, message: 'No Supabase DB configured' }
+
+  try {
+    await supabaseDb.query('BEGIN')
+    await supabaseDb.query('DELETE FROM matches')
+    await supabaseDb.query('DELETE FROM colleges')
+    await supabaseDb.query('DELETE FROM sports')
+
+    for (const college of data.colleges) {
+      await supabaseDb.query(
+        `INSERT INTO colleges (id, full_name, short_name, created_at)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (id) DO UPDATE SET full_name = EXCLUDED.full_name, short_name = EXCLUDED.short_name, created_at = EXCLUDED.created_at`,
+        [college.id, college.full_name, college.short_name, college.created_at || new Date().toISOString()]
+      )
+    }
+
+    for (const sport of data.sports) {
+      await supabaseDb.query(
+        `INSERT INTO sports (id, name, icon, description, sort_order)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, icon = EXCLUDED.icon, description = EXCLUDED.description, sort_order = EXCLUDED.sort_order`,
+        [sport.id, sport.name, sport.icon, sport.description, sport.sort_order]
+      )
+    }
+
+    for (const match of data.matches) {
+      await supabaseDb.query(
+        `INSERT INTO matches (id, sport, gender, team_a_id, team_b_id, team_a_name, team_b_name,
+         score_a, score_b, scheduled_time, venue, status, winner_id, extra_data, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+         ON CONFLICT (id) DO UPDATE SET
+           sport = EXCLUDED.sport,
+           gender = EXCLUDED.gender,
+           team_a_id = EXCLUDED.team_a_id,
+           team_b_id = EXCLUDED.team_b_id,
+           team_a_name = EXCLUDED.team_a_name,
+           team_b_name = EXCLUDED.team_b_name,
+           score_a = EXCLUDED.score_a,
+           score_b = EXCLUDED.score_b,
+           scheduled_time = EXCLUDED.scheduled_time,
+           venue = EXCLUDED.venue,
+           status = EXCLUDED.status,
+           winner_id = EXCLUDED.winner_id,
+           extra_data = EXCLUDED.extra_data,
+           created_at = EXCLUDED.created_at,
+           updated_at = EXCLUDED.updated_at`,
+        [match.id, match.sport, match.gender, match.team_a_id, match.team_b_id, match.team_a_name, match.team_b_name,
+          match.score_a, match.score_b, match.scheduled_time, match.venue, match.status, match.winner_id,
+          match.extra_data, match.created_at || new Date().toISOString(), match.updated_at || new Date().toISOString()]
+      )
+    }
+
+    await supabaseDb.query(`SELECT setval(pg_get_serial_sequence('colleges','id'), COALESCE(MAX(id), 1), true) FROM colleges`)
+    await supabaseDb.query(`SELECT setval(pg_get_serial_sequence('matches','id'), COALESCE(MAX(id), 1), true) FROM matches`)
+
+    await supabaseDb.query('COMMIT')
+    return { success: true, message: 'Supabase DB synchronized with local data' }
+  } catch (error) {
+    await supabaseDb.query('ROLLBACK').catch(() => {})
+    console.error('❌ Supabase DB import sync failed:', error.message || error)
+    return { success: false, message: error.message || 'Supabase DB sync failed' }
+  }
+}
+
+async function syncSingleCollegeToSupabase(college) {
+  if (!supabaseDb) return { success: true }
+  try {
+    await supabaseDb.query(
+      `INSERT INTO colleges (id, full_name, short_name, created_at)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (id) DO UPDATE SET full_name = EXCLUDED.full_name, short_name = EXCLUDED.short_name, created_at = EXCLUDED.created_at`,
+      [college.id, college.full_name, college.short_name, college.created_at || new Date().toISOString()]
+    )
+    return { success: true }
+  } catch (error) {
+    console.error('❌ Supabase DB college sync failed:', error.message || error)
+    return { success: false, message: error.message || 'College sync failed' }
+  }
+}
+
+async function syncSingleSportToSupabase(sport) {
+  if (!supabaseDb) return { success: true }
+  try {
+    await supabaseDb.query(
+      `INSERT INTO sports (id, name, icon, description, sort_order)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, icon = EXCLUDED.icon, description = EXCLUDED.description, sort_order = EXCLUDED.sort_order`,
+      [sport.id, sport.name, sport.icon, sport.description, sport.sort_order]
+    )
+    return { success: true }
+  } catch (error) {
+    console.error('❌ Supabase DB sport sync failed:', error.message || error)
+    return { success: false, message: error.message || 'Sport sync failed' }
+  }
+}
+
+async function syncSingleMatchToSupabase(match) {
+  if (!supabaseDb) return { success: true }
+  try {
+    await supabaseDb.query(
+      `INSERT INTO matches (id, sport, gender, team_a_id, team_b_id, team_a_name, team_b_name,
+       score_a, score_b, scheduled_time, venue, status, winner_id, extra_data, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+       ON CONFLICT (id) DO UPDATE SET
+         sport = EXCLUDED.sport,
+         gender = EXCLUDED.gender,
+         team_a_id = EXCLUDED.team_a_id,
+         team_b_id = EXCLUDED.team_b_id,
+         team_a_name = EXCLUDED.team_a_name,
+         team_b_name = EXCLUDED.team_b_name,
+         score_a = EXCLUDED.score_a,
+         score_b = EXCLUDED.score_b,
+         scheduled_time = EXCLUDED.scheduled_time,
+         venue = EXCLUDED.venue,
+         status = EXCLUDED.status,
+         winner_id = EXCLUDED.winner_id,
+         extra_data = EXCLUDED.extra_data,
+         created_at = EXCLUDED.created_at,
+         updated_at = EXCLUDED.updated_at`,
+      [match.id, match.sport, match.gender, match.team_a_id, match.team_b_id, match.team_a_name, match.team_b_name,
+        match.score_a, match.score_b, match.scheduled_time, match.venue, match.status, match.winner_id,
+        match.extra_data, match.created_at || new Date().toISOString(), match.updated_at || new Date().toISOString()]
+    )
+    return { success: true }
+  } catch (error) {
+    console.error('❌ Supabase DB match sync failed:', error.message || error)
+    return { success: false, message: error.message || 'Match sync failed' }
+  }
+}
+
+async function deleteFromSupabaseTable(table, id) {
+  if (!supabaseDb) return { success: true }
+  try {
+    await supabaseDb.query(`DELETE FROM ${table} WHERE id = $1`, [id])
+    return { success: true }
+  } catch (error) {
+    console.error(`❌ Supabase DB delete from ${table} failed:`, error.message || error)
+    return { success: false, message: error.message || 'Delete failed' }
+  }
+}
+
+function emitSupabaseSyncStatus(payload) {
+  io.emit('supabase-sync-status', payload)
+}
+
+async function syncLocalDatabaseToSupabase() {
+  if (!supabaseDb) return { success: true, message: 'No Supabase DB configured' }
+  const data = exportData()
+  return syncImportToSupabase(data)
+}
+
+async function ensureSupabaseDatabaseMirror() {
+  if (!supabaseDb) return
+
+  const localCollegeCount = db.prepare('SELECT COUNT(*) as count FROM colleges').get().count
+  const localMatchCount = db.prepare('SELECT COUNT(*) as count FROM matches').get().count
+  const localSportCount = db.prepare('SELECT COUNT(*) as count FROM sports').get().count
+
+  if (localCollegeCount === 0 && localMatchCount === 0 && localSportCount === 0) {
+    return
+  }
+
+  const result = await syncLocalDatabaseToSupabase()
+  if (!result.success) {
+    console.error('❌ Initial Supabase DB mirror failed:', result.message)
+    emitSupabaseSyncStatus({ operation: 'initial-sync', success: false, message: result.message })
+  }
+}
+
+async function ensureSupabaseBucket() {
+  if (!supabase) return
+
+  try {
+    const { data: buckets, error } = await supabase.storage.listBuckets()
+    if (error) {
+      console.error('Supabase bucket list failed:', error.message || error)
+      return
+    }
+
+    const exists = buckets.some(bucket => bucket.name === SUPABASE_BUCKET)
+    if (!exists) {
+      const { error: createError } = await supabase.storage.createBucket(SUPABASE_BUCKET, { public: false })
+      if (createError) {
+        console.error('Supabase bucket create failed:', createError.message || createError)
+      }
+    }
+  } catch (error) {
+    console.error('Supabase bucket setup failed:', error.message || error)
+  }
+}
+
+async function backupToSupabase() {
+  if (!supabase) return
+
+  try {
+    await ensureSupabaseBucket()
+    const backupData = exportData()
+    const json = JSON.stringify(backupData, null, 2)
+    const file = Buffer.from(json, 'utf8')
+    const { error } = await supabase.storage.from(SUPABASE_BUCKET).upload('data-backup.json', file, {
+      contentType: 'application/json',
+      upsert: true,
+    })
+    if (error) {
+      throw error
+    }
+    console.log('📦 Supabase backup completed')
+  } catch (error) {
+    console.error('❌ Supabase backup failed:', error.message || error)
+  }
+}
+
+function scheduleSupabaseBackup() {
+  if (!supabase) return
+  backupToSupabase().catch(error => console.error('Scheduled Supabase backup failed:', error.message || error))
+}
+
+async function restoreFromSupabaseIfEmpty() {
+  if (!supabase) return false
+
+  const collegeCount = db.prepare('SELECT COUNT(*) as count FROM colleges').get().count
+  const matchCount = db.prepare('SELECT COUNT(*) as count FROM matches').get().count
+  if (collegeCount > 0 || matchCount > 0) return false
+
+  try {
+    await ensureSupabaseBucket()
+    const { data, error } = await supabase.storage.from(SUPABASE_BUCKET).download('data-backup.json')
+    if (error) {
+      if (error.status !== 404) {
+        console.error('Supabase restore failed:', error.message || error)
+      }
+      return false
+    }
+    const body = await data.text()
+    const backupData = JSON.parse(body)
+    importData(backupData)
+    console.log('🔄 Restored from Supabase backup')
+    return true
+  } catch (error) {
+    console.error('❌ Supabase restore failed:', error.message || error)
+    return false
+  }
+}
+
+async function autoRestore() {
+  try {
+    const restoredFromSupabaseDb = await restoreFromSupabaseDbIfEmpty()
+    if (restoredFromSupabaseDb) return
+
+    const restoredFromSupabase = await restoreFromSupabaseIfEmpty()
+    if (restoredFromSupabase) return
+
+    const backupPath = path.join(__dirname, 'data-backup.json')
+    if (fs.existsSync(backupPath)) {
+      const collegeCount = db.prepare('SELECT COUNT(*) as count FROM colleges').get()
+      const matchCount = db.prepare('SELECT COUNT(*) as count FROM matches').get()
+
+      if (collegeCount.count === 0 && matchCount.count === 0) {
+        const backupData = JSON.parse(fs.readFileSync(backupPath, 'utf8'))
+        importData(backupData)
+        console.log('🔄 Auto-restored from local backup:', backupPath)
+      }
+    }
+  } catch (error) {
+    console.error('❌ Auto-restore failed:', error.message || error)
+  }
+}
+
+async function autoBackup() {
   try {
     const collegeCount = db.prepare('SELECT COUNT(*) as count FROM colleges').get()
     const matchCount = db.prepare('SELECT COUNT(*) as count FROM matches').get()
@@ -159,28 +527,10 @@ function autoBackup() {
       const backupPath = path.join(__dirname, 'data-backup.json')
       fs.writeFileSync(backupPath, JSON.stringify(backupData, null, 2))
       console.log('📦 Auto-backup created:', backupPath)
+      await backupToSupabase()
     }
   } catch (error) {
-    console.error('❌ Auto-backup failed:', error.message)
-  }
-}
-
-// Auto-restore on startup (if backup exists and database is empty)
-function autoRestore() {
-  try {
-    const backupPath = path.join(__dirname, 'data-backup.json')
-    if (fs.existsSync(backupPath)) {
-      const collegeCount = db.prepare('SELECT COUNT(*) as count FROM colleges').get()
-      const matchCount = db.prepare('SELECT COUNT(*) as count FROM matches').get()
-
-      if (collegeCount.count === 0 && matchCount.count === 0) {
-        const backupData = JSON.parse(fs.readFileSync(backupPath, 'utf8'))
-        importData(backupData)
-        console.log('🔄 Auto-restored from backup:', backupPath)
-      }
-    }
-  } catch (error) {
-    console.error('❌ Auto-restore failed:', error.message)
+    console.error('❌ Auto-backup failed:', error.message || error)
   }
 }
 
@@ -250,8 +600,16 @@ function importData(data) {
 }
 
 // Initialize backup/restore system
-autoRestore() // Try to restore first
-autoBackup()  // Then backup current state
+;(async () => {
+  try {
+    await connectSupabaseDb()
+    await autoRestore()
+    await ensureSupabaseDatabaseMirror()
+    await autoBackup()
+  } catch (error) {
+    console.error('❌ Backup/restore initialization failed:', error.message || error)
+  }
+})()
 
 // Socket.io authentication middleware
 io.use((socket, next) => {
@@ -267,7 +625,7 @@ io.use((socket, next) => {
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id)
 
-  socket.on('update-score', (data) => {
+  socket.on('update-score', async (data) => {
     if (!socket.isAdmin) return
 
     const { matchId, field, value } = data
@@ -301,10 +659,11 @@ io.on('connection', (socket) => {
       WHERE m.id = ?
     `).get(matchId)
 
+    await autoBackup()
     io.emit('score-updated', finalMatch)
   })
 
-  socket.on('update-status', (data) => {
+  socket.on('update-status', async (data) => {
     if (!socket.isAdmin) return
 
     const { matchId, status, winnerId } = data
@@ -319,6 +678,7 @@ io.on('connection', (socket) => {
       WHERE m.id = ?
     `).get(matchId)
 
+    await autoBackup()
     io.emit('status-updated', updatedMatch)
     io.emit('matches-updated')
     io.emit('leaderboard-update')
@@ -399,30 +759,39 @@ app.get('/api/colleges', (req, res) => {
 })
 
 // Add college (admin)
-app.post('/api/colleges', (req, res) => {
+app.post('/api/colleges', async (req, res) => {
   const { full_name, short_name } = req.body
   if (!full_name || !short_name) {
     return res.status(400).json({ error: 'Full name and short name are required' })
   }
   const result = db.prepare('INSERT INTO colleges (full_name, short_name) VALUES (?, ?)').run(full_name, short_name)
   const college = db.prepare('SELECT * FROM colleges WHERE id = ?').get(result.lastInsertRowid)
-  res.json(college)
+  const syncStatus = await syncSingleCollegeToSupabase(college)
+  emitSupabaseSyncStatus({ operation: 'add-college', success: syncStatus.success, message: syncStatus.message || 'College synced to Supabase' })
+  await autoBackup()
+  res.json({ ...college, supabaseSync: syncStatus })
 })
 
 // Update college (admin)
-app.put('/api/colleges/:id', (req, res) => {
+app.put('/api/colleges/:id', async (req, res) => {
   const { id } = req.params
   const { full_name, short_name } = req.body
   db.prepare('UPDATE colleges SET full_name = ?, short_name = ? WHERE id = ?').run(full_name, short_name, id)
   const college = db.prepare('SELECT * FROM colleges WHERE id = ?').get(id)
-  res.json(college)
+  const syncStatus = await syncSingleCollegeToSupabase(college)
+  emitSupabaseSyncStatus({ operation: 'update-college', success: syncStatus.success, message: syncStatus.message || 'College synced to Supabase' })
+  await autoBackup()
+  res.json({ ...college, supabaseSync: syncStatus })
 })
 
 // Delete college (admin)
-app.delete('/api/colleges/:id', (req, res) => {
+app.delete('/api/colleges/:id', async (req, res) => {
   const { id } = req.params
   db.prepare('DELETE FROM colleges WHERE id = ?').run(id)
-  res.json({ success: true })
+  const syncStatus = await deleteFromSupabaseTable('colleges', id)
+  emitSupabaseSyncStatus({ operation: 'delete-college', success: syncStatus.success, message: syncStatus.message || 'College removed from Supabase' })
+  await autoBackup()
+  res.json({ success: true, supabaseSync: syncStatus })
 })
 
 // Get all matches (with optional filters)
@@ -474,7 +843,7 @@ app.get('/api/matches/:id', (req, res) => {
 })
 
 // Create match (admin)
-app.post('/api/matches', (req, res) => {
+app.post('/api/matches', async (req, res) => {
   const { sport, gender, team_a_id, team_b_id, scheduled_time, venue, status } = req.body
 
   // Get team names
@@ -487,12 +856,15 @@ app.post('/api/matches', (req, res) => {
   `).run(sport, gender || 'men', team_a_id, team_b_id, teamA?.short_name, teamB?.short_name, scheduled_time, venue, status || 'upcoming')
 
   const match = db.prepare('SELECT * FROM matches WHERE id = ?').get(result.lastInsertRowid)
+  const syncStatus = await syncSingleMatchToSupabase(match)
+  emitSupabaseSyncStatus({ operation: 'add-match', success: syncStatus.success, message: syncStatus.message || 'Match synced to Supabase' })
+  await autoBackup()
   io.emit('matches-updated')
-  res.json(match)
+  res.json({ ...match, supabaseSync: syncStatus })
 })
 
 // Update match (admin)
-app.put('/api/matches/:id', (req, res) => {
+app.put('/api/matches/:id', async (req, res) => {
   const { id } = req.params
   const { sport, gender, team_a_id, team_b_id, scheduled_time, venue, status } = req.body
 
@@ -522,16 +894,22 @@ app.put('/api/matches/:id', (req, res) => {
   )
 
   const match = db.prepare('SELECT * FROM matches WHERE id = ?').get(id)
+  const syncStatus = await syncSingleMatchToSupabase(match)
+  emitSupabaseSyncStatus({ operation: 'update-match', success: syncStatus.success, message: syncStatus.message || 'Match synced to Supabase' })
+  await autoBackup()
   io.emit('matches-updated')
-  res.json(match)
+  res.json({ ...match, supabaseSync: syncStatus })
 })
 
 // Delete match (admin)
-app.delete('/api/matches/:id', (req, res) => {
+app.delete('/api/matches/:id', async (req, res) => {
   const { id } = req.params
   db.prepare('DELETE FROM matches WHERE id = ?').run(id)
+  const syncStatus = await deleteFromSupabaseTable('matches', id)
+  emitSupabaseSyncStatus({ operation: 'delete-match', success: syncStatus.success, message: syncStatus.message || 'Match removed from Supabase' })
+  await autoBackup()
   io.emit('matches-updated')
-  res.json({ success: true })
+  res.json({ success: true, supabaseSync: syncStatus })
 })
 
 // Get overall leaderboard
@@ -633,7 +1011,7 @@ app.get('/api/leaderboard/sport/:sport', (req, res) => {
 })
 
 // Score update via REST (admin panel uses this)
-app.post('/api/matches/:id/score', (req, res) => {
+app.post('/api/matches/:id/score', async (req, res) => {
   const { id } = req.params
   const { score_a, score_b } = req.body
   db.prepare('UPDATE matches SET score_a = ?, score_b = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(score_a, score_b, id)
@@ -644,13 +1022,16 @@ app.post('/api/matches/:id/score', (req, res) => {
     LEFT JOIN colleges cb ON m.team_b_id = cb.id
     WHERE m.id = ?
   `).get(id)
+  const syncStatus = await syncSingleMatchToSupabase(match)
+  emitSupabaseSyncStatus({ operation: 'score-update', success: syncStatus.success, message: syncStatus.message || 'Match score synced to Supabase' })
+  await autoBackup()
   io.emit('score-updated', match)
   io.emit('matches-updated')
-  res.json(match)
+  res.json({ ...match, supabaseSync: syncStatus })
 })
 
 // Status update via REST (admin panel uses this)
-app.post('/api/matches/:id/status', (req, res) => {
+app.post('/api/matches/:id/status', async (req, res) => {
   const { id } = req.params
   const { status, winner_id } = req.body
   db.prepare('UPDATE matches SET status = ?, winner_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(status, winner_id || null, id)
@@ -661,10 +1042,13 @@ app.post('/api/matches/:id/status', (req, res) => {
     LEFT JOIN colleges cb ON m.team_b_id = cb.id
     WHERE m.id = ?
   `).get(id)
+  const syncStatus = await syncSingleMatchToSupabase(match)
+  emitSupabaseSyncStatus({ operation: 'status-update', success: syncStatus.success, message: syncStatus.message || 'Match status synced to Supabase' })
+  await autoBackup()
   io.emit('status-updated', match)
   io.emit('matches-updated')
   io.emit('leaderboard-update')
-  res.json(match)
+  res.json({ ...match, supabaseSync: syncStatus })
 })
 
 // Get sports list (from DB)
@@ -674,31 +1058,43 @@ app.get('/api/sports', (req, res) => {
 })
 
 // Add sport (admin)
-app.post('/api/sports', (req, res) => {
+app.post('/api/sports', async (req, res) => {
   const { id, name, icon, description } = req.body
   if (!id || !name) return res.status(400).json({ error: 'id and name are required' })
   try {
+    const normalizedId = id.toLowerCase().replace(/\s+/g, '-')
     const maxOrder = db.prepare('SELECT MAX(sort_order) as m FROM sports').get().m || 0
     db.prepare('INSERT INTO sports (id, name, icon, description, sort_order) VALUES (?, ?, ?, ?, ?)')
-      .run(id.toLowerCase().replace(/\s+/g, '-'), name, icon || '🏆', description || '', maxOrder + 1)
-    res.json(db.prepare('SELECT * FROM sports WHERE id = ?').get(id.toLowerCase().replace(/\s+/g, '-')))
+      .run(normalizedId, name, icon || '🏆', description || '', maxOrder + 1)
+    const sport = db.prepare('SELECT * FROM sports WHERE id = ?').get(normalizedId)
+    const syncStatus = await syncSingleSportToSupabase(sport)
+    emitSupabaseSyncStatus({ operation: 'add-sport', success: syncStatus.success, message: syncStatus.message || 'Sport synced to Supabase' })
+    await autoBackup()
+    res.json({ ...sport, supabaseSync: syncStatus })
   } catch (e) {
     res.status(400).json({ error: e.message })
   }
 })
 
 // Update sport (admin)
-app.put('/api/sports/:id', (req, res) => {
+app.put('/api/sports/:id', async (req, res) => {
   const { name, icon, description } = req.body
   db.prepare('UPDATE sports SET name = ?, icon = ?, description = ? WHERE id = ?')
     .run(name, icon, description, req.params.id)
-  res.json(db.prepare('SELECT * FROM sports WHERE id = ?').get(req.params.id))
+  const sport = db.prepare('SELECT * FROM sports WHERE id = ?').get(req.params.id)
+  const syncStatus = await syncSingleSportToSupabase(sport)
+  emitSupabaseSyncStatus({ operation: 'update-sport', success: syncStatus.success, message: syncStatus.message || 'Sport synced to Supabase' })
+  await autoBackup()
+  res.json({ ...sport, supabaseSync: syncStatus })
 })
 
 // Delete sport (admin)
-app.delete('/api/sports/:id', (req, res) => {
+app.delete('/api/sports/:id', async (req, res) => {
   db.prepare('DELETE FROM sports WHERE id = ?').run(req.params.id)
-  res.json({ success: true })
+  const syncStatus = await deleteFromSupabaseTable('sports', req.params.id)
+  emitSupabaseSyncStatus({ operation: 'delete-sport', success: syncStatus.success, message: syncStatus.message || 'Sport removed from Supabase' })
+  await autoBackup()
+  res.json({ success: true, supabaseSync: syncStatus })
 })
 
 // ── Data Backup/Restore API Endpoints ──────────────────
@@ -716,7 +1112,7 @@ app.get('/api/admin/export', (req, res) => {
 })
 
 // Import data from JSON
-app.post('/api/admin/import', (req, res) => {
+app.post('/api/admin/import', async (req, res) => {
   try {
     const data = req.body
     if (!data || !Array.isArray(data.colleges) || !Array.isArray(data.matches) || !Array.isArray(data.sports)) {
@@ -724,7 +1120,7 @@ app.post('/api/admin/import', (req, res) => {
     }
 
     importData(data)
-    autoBackup() // Create new backup after import
+    await autoBackup() // Create new backup after import
 
     // Emit updates to all clients
     io.emit('matches-updated')
