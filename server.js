@@ -163,17 +163,17 @@ if (collegeCount.count === 0) {
 }
 
 // ── Data Backup/Restore System ────────────────────────
-const SUPABASE_URL = 'https://mnofykldrbskjrvqfpxh.supabase.co'
-const SUPABASE_SERVICE_ROLE_KEY = 'sb_publishable_I_LM2e2eROhoUL7KvHB3Mw_iKmOFe_f'
-const SUPABASE_DB_URL = 'postgresql://postgres:Jaisilly%402008@db.mnofykldrbskjrvqfpxh.supabase.co:5432/postgres'
-const SUPABASE_BUCKET = 'quadra-backups'
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://mnofykldrbskjrvqfpxh.supabase.co'
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'sb_publishable_I_LM2e2eROhoUL7KvHB3Mw_iKmOFe_f'
+const SUPABASE_DB_URL = process.env.REMOTE_DB_URL || process.env.SUPABASE_DB_URL || 'postgresql://postgres:Jaisilly%402008@db.mnofykldrbskjrvqfpxh.supabase.co:5432/postgres'
+const SUPABASE_BUCKET = process.env.SUPABASE_BUCKET || 'quadra-backups'
 const useSupabaseBackup = Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY)
 const useSupabaseDb = Boolean(SUPABASE_DB_URL)
 
 // Baserow configuration
-const BASEROW_API_BASE = 'https://api.baserow.io/api/'
-const BASEROW_API_TOKEN = 'DCgxPzLBqG5BmGIZbl5I7Xuw9Yek5Lyv'
-const BASEROW_TABLE_ID = 971586
+const BASEROW_API_BASE = process.env.BASEROW_API_BASE || 'https://api.baserow.io/api/'
+const BASEROW_API_TOKEN = process.env.BASEROW_API_TOKEN || 'DCgxPzLBqG5BmGIZbl5I7Xuw9Yek5Lyv'
+const BASEROW_TABLE_ID = Number(process.env.BASEROW_TABLE_ID || 971586)
 
 // Use Baserow as primary backup instead of Supabase
 const useBaserowBackup = true
