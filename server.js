@@ -1098,6 +1098,62 @@ app.get('/api/leaderboard/overall', (req, res) => {
   res.json(leaderboard)
 })
 
+// Get gender-specific leaderboard
+app.get('/api/leaderboard', (req, res) => {
+  const { gender } = req.query
+  const colleges = db.prepare('SELECT id, short_name FROM colleges').all()
+
+  const leaderboard = colleges.map(college => {
+    let query = `
+      SELECT * FROM matches
+      WHERE (team_a_id = ? OR team_b_id = ?) AND status = 'completed'
+    `
+    const params = [college.id, college.id]
+
+    if (gender) {
+      query += ' AND gender = ?'
+      params.push(gender)
+    }
+
+    const matches = db.prepare(query).all(...params)
+
+    let wins = 0, draws = 0, losses = 0
+
+    matches.forEach(match => {
+      if (match.winner_id === college.id) {
+        wins++
+      } else if (match.winner_id === null && match.score_a === match.score_b) {
+        draws++
+      } else {
+        losses++
+      }
+    })
+
+    const total_points = wins * 10 + (draws + losses) * 6
+
+    return {
+      id: college.id,
+      short_name: college.short_name,
+      played: matches.length,
+      wins,
+      draws,
+      losses,
+      total_points
+    }
+  })
+
+  // Filter out colleges with no matches
+  const filteredLeaderboard = leaderboard.filter(college => college.played > 0)
+
+  // Sort by points descending
+  filteredLeaderboard.sort((a, b) => {
+    if (b.total_points !== a.total_points) return b.total_points - a.total_points
+    return b.wins - a.wins
+  })
+
+  res.json(filteredLeaderboard)
+})
+
 // Get sport-wise leaderboard
 app.get('/api/leaderboard/sport/:sport', (req, res) => {
   const { sport } = req.params
