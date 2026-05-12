@@ -22,7 +22,7 @@ export const SocketProvider = ({ children }) => {
     const token = localStorage.getItem('adminToken')
     const newSocket = io(window.location.origin, {
       auth: { token },
-      transports: ['websocket', 'polling']
+      transports: ['polling', 'websocket']
     })
 
     newSocket.on('connect', () => {

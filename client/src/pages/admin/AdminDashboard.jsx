@@ -76,6 +76,32 @@ export default function AdminDashboard() {
     }
   }
 
+  const handleImport = async (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    try {
+      setBackupLoading(true)
+      const text = await file.text()
+      const data = JSON.parse(text)
+      await axios.post('/api/admin/import', data, {
+        headers: {
+          Authorization: `Bearer ${adminToken}`,
+          'Content-Type': 'application/json'
+        }
+      })
+      alert('Import completed successfully!')
+      fetchStats()
+      fetchBackupStatus()
+      fetchSyncHistory()
+    } catch (e) {
+      alert('Import failed: ' + (e.response?.data?.error || e.message))
+    } finally {
+      setBackupLoading(false)
+      event.target.value = ''
+    }
+  }
+
   const fetchSyncHistory = async () => {
     if (!adminToken) return
     try {
