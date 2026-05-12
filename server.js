@@ -163,12 +163,17 @@ if (collegeCount.count === 0) {
 }
 
 // ── Data Backup/Restore System ────────────────────────
-const SUPABASE_URL = process.env.SUPABASE_URL
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
-const SUPABASE_DB_URL = process.env.SUPABASE_DB_URL || process.env.DATABASE_URL
+const SUPABASE_URL = 'https://mnofykldrbskjrvqfpxh.supabase.co'
+const SUPABASE_SERVICE_ROLE_KEY = 'sb_publishable_I_LM2e2eROhoUL7KvHB3Mw_iKmOFe_f'
+const SUPABASE_DB_URL = 'postgresql://postgres:Jaisilly%402008@db.mnofykldrbskjrvqfpxh.supabase.co:5432/postgres'
 const SUPABASE_BUCKET = 'quadra-backups'
 const useSupabaseBackup = Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY)
 const useSupabaseDb = Boolean(SUPABASE_DB_URL)
+
+// Baserow configuration
+const BASEROW_API_BASE = 'https://api.baserow.io/api/'
+const BASEROW_API_TOKEN = 'DCgxPzLBqG5BmGIZbl5I7Xuw9Yek5Lyv'
+const BASEROW_TABLE_ID = 971586
 const supabase = useSupabaseBackup
   ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
   : null
@@ -372,10 +377,12 @@ async function syncImportToSupabase(data) {
     await querySupabaseDb(`SELECT setval(pg_get_serial_sequence('matches','id'), COALESCE(MAX(id), 1), true) FROM matches`)
 
     await querySupabaseDb('COMMIT')
+    await logToBaserow('Supabase Sync Success', 'Local data synchronized to Supabase DB')
     return { success: true, message: 'Supabase DB synchronized with local data' }
   } catch (error) {
     await querySupabaseDb('ROLLBACK').catch(() => {})
     console.error('❌ Supabase DB import sync failed:', error.message || error)
+    await logToBaserow('Supabase Sync Failed', `Import sync failed: ${error.message || error}`)
     return { success: false, message: error.message || 'Supabase DB sync failed' }
   }
 }
@@ -464,6 +471,59 @@ function emitSupabaseSyncStatus(payload) {
   }
   recordSupabaseSyncEvent(event)
   io.emit('supabase-sync-status', event)
+}
+
+// ── Baserow Integration ────────────────────────
+
+async function baserowRequest(endpoint, method = 'GET', body = null) {
+  const url = `${BASEROW_API_BASE}${endpoint}`
+  const headers = {
+    'Authorization': `Token ${BASEROW_API_TOKEN}`,
+    'Content-Type': 'application/json'
+  }
+
+  const options = { method, headers }
+  if (body) options.body = JSON.stringify(body)
+
+  try {
+    const response = await fetch(url, options)
+    if (!response.ok) throw new Error(`Baserow API error: ${response.status} ${response.statusText}`)
+    return await response.json()
+  } catch (error) {
+    console.error('❌ Baserow request failed:', error.message || error)
+    throw error
+  }
+}
+
+async function getBaserowRows() {
+  return await baserowRequest(`database/rows/table/${BASEROW_TABLE_ID}/?user_field_names=true`)
+}
+
+async function createBaserowRow(item, details, timestamp = null) {
+  const body = {
+    Item: item,
+    Details: details,
+    Timestamp: timestamp || new Date().toISOString()
+  }
+  return await baserowRequest(`database/rows/table/${BASEROW_TABLE_ID}/`, 'POST', body)
+}
+
+async function updateBaserowRow(rowId, updates) {
+  return await baserowRequest(`database/rows/table/${BASEROW_TABLE_ID}/${rowId}/`, 'PATCH', updates)
+}
+
+async function deleteBaserowRow(rowId) {
+  return await baserowRequest(`database/rows/table/${BASEROW_TABLE_ID}/${rowId}/`, 'DELETE')
+}
+
+// Log sync events to Baserow
+async function logToBaserow(item, details) {
+  try {
+    await createBaserowRow(item, details)
+    console.log('📝 Logged to Baserow:', item)
+  } catch (error) {
+    console.error('❌ Failed to log to Baserow:', error.message || error)
+  }
 }
 
 async function syncLocalDatabaseToSupabase() {
@@ -1263,6 +1323,26 @@ app.get('/api/admin/supabase-sync-history', (req, res) => {
     res.json({ history: supabaseSyncHistory })
   } catch (error) {
     res.status(500).json({ error: 'Failed to load sync history: ' + error.message })
+  }
+})
+
+// Baserow endpoints
+app.get('/api/admin/baserow-rows', async (req, res) => {
+  try {
+    const rows = await getBaserowRows()
+    res.json({ rows })
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch Baserow rows: ' + error.message })
+  }
+})
+
+app.post('/api/admin/baserow-row', async (req, res) => {
+  try {
+    const { item, details, timestamp } = req.body
+    const row = await createBaserowRow(item, details, timestamp)
+    res.json({ row })
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to create Baserow row: ' + error.message })
   }
 })
 
