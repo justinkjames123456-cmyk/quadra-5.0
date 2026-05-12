@@ -119,7 +119,8 @@ export default function Layout({ children }) {
               <h3 className="font-bold text-sm mb-3" style={{ color: 'var(--accent3)' }}>Contact</h3>
               <p className="text-sm t-muted mb-1">Sports Secretary: Lal Krishnan AR</p>
               <p className="text-sm t-muted mb-1">Phone: 7025760870</p>
-              <p className="text-sm t-muted mb-2">General Secretary: +91 94964 75272</p>
+              <p className="text-sm t-muted mb-1">General Secretary: Mahadevan MS</p>
+              <p className="text-sm t-muted mb-2">Phone: +91 94964 75272</p>
               <div className="flex flex-col gap-2">
                 <a href="https://instagram.com/quadra.tdmc" target="_blank" rel="noopener noreferrer"
                   className="text-sm t-muted inline-flex items-center gap-2 transition-colors hover:t-accent">

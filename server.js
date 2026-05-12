@@ -139,9 +139,17 @@ if (sportsCount.count === 0) {
     { id: 'kho-kho',      name: 'Kho Kho',      icon: '🏃', description: 'Traditional Indian tag game',              sort_order: 6 },
     { id: 'table-tennis', name: 'Table Tennis', icon: '🏓', description: 'Singles & Doubles',                        sort_order: 7 },
     { id: 'chess',        name: 'Chess',        icon: '♟️', description: 'Mixed teams allowed',                      sort_order: 8 },
+    { id: 'throwball',    name: 'Throwball',    icon: '🥎', description: 'Women-only throwball event',               sort_order: 9 },
   ]
   const ins = db.prepare('INSERT INTO sports (id, name, icon, description, sort_order) VALUES (?, ?, ?, ?, ?)')
   defaultSports.forEach(s => ins.run(s.id, s.name, s.icon, s.description, s.sort_order))
+}
+
+// Ensure Throwball exists even if the database already had sports seeded
+const throwballExists = db.prepare('SELECT 1 FROM sports WHERE id = ?').get('throwball')
+if (!throwballExists) {
+  db.prepare('INSERT INTO sports (id, name, icon, description, sort_order) VALUES (?, ?, ?, ?, ?)')
+    .run('throwball', 'Throwball', '🥎', 'Women-only throwball event', 9)
 }
 
 // Seed initial colleges if empty
@@ -684,7 +692,7 @@ function importData(data) {
 
     // Reset auto-increment counters if sqlite_sequence exists
     if (sqliteSequenceExists()) {
-      db.prepare('DELETE FROM sqlite_sequence WHERE name IN ("colleges", "matches", "sports")').run()
+      db.prepare("DELETE FROM sqlite_sequence WHERE name IN ('colleges', 'matches', 'sports')").run()
     }
 
     // Import colleges
@@ -1068,7 +1076,7 @@ app.get('/api/leaderboard/overall', (req, res) => {
       }
     })
 
-    const total_points = wins * 3 + draws
+    const total_points = wins * 10 + (draws + losses) * 6
 
     return {
       id: college.id,
@@ -1122,7 +1130,7 @@ app.get('/api/leaderboard/sport/:sport', (req, res) => {
       }
     })
 
-    const total_points = wins * 3 + draws
+    const total_points = wins * 10 + (draws + losses) * 6
 
     return {
       id: college.id,
@@ -1350,6 +1358,15 @@ app.post('/api/admin/baserow-backup', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: 'Baserow backup failed: ' + error.message })
   }
+})
+
+// Get remote DB connection status
+app.get('/api/admin/remote-db-status', (req, res) => {
+  res.json({
+    configured: useSupabaseDb,
+    connected: supabaseDbConnected,
+    provider: useSupabaseDb ? (SUPABASE_DB_URL.includes('clever-cloud.com') ? 'Clever Cloud' : 'Supabase') : 'None'
+  })
 })
 
 // SPA fallback for production

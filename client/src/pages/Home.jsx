@@ -303,7 +303,7 @@ export default function Home() {
               {[
                 { val: sports.length || 8, label: 'Sports',     color: 'var(--accent)'  },
                 { val: '50+',              label: 'Matches',    color: 'var(--accent2)' },
-                { val: '₹35K',             label: 'Prize Pool', color: 'var(--accent3)' },
+                { val: '₹2.5L',           label: 'Prize Pool', color: 'var(--accent3)' },
               ].map(s => (
                 <div key={s.label} className="px-6 py-4 rounded-xl text-center"
                   style={{ background: 'var(--bg-section)', border: '1px solid var(--border)' }}>
