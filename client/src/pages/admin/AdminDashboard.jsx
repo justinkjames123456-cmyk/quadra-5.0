@@ -10,7 +10,7 @@ export default function AdminDashboard() {
   const [sportsList, setSportsList] = useState([])
   const [loading, setLoading] = useState(true)
   const [backupStatus, setBackupStatus] = useState(null)
-  const [supabaseStatus, setSupabaseStatus] = useState(null)
+  const [baserowStatus, setBaserowStatus] = useState(null)
   const [backupLoading, setBackupLoading] = useState(false)
   const [syncHistory, setSyncHistory] = useState([])
   const [historyLoading, setHistoryLoading] = useState(true)
@@ -33,7 +33,7 @@ export default function AdminDashboard() {
         headers: { Authorization: `Bearer ${adminToken}` }
       })
       setBackupStatus(res.data)
-      setSupabaseStatus(res.data.baserow || null)
+      setBaserowStatus(res.data.baserow || null)
     } catch (e) { console.error('Backup status error:', e) }
   }
 
@@ -60,27 +60,18 @@ export default function AdminDashboard() {
     }
   }
 
-  const handleImport = async (event) => {
-    const file = event.target.files[0]
-    if (!file) return
-
+  const handleBaserowBackup = async () => {
     try {
       setBackupLoading(true)
-      const text = await file.text()
-      const data = JSON.parse(text)
-
-      await axios.post('/api/admin/import', data, {
+      await axios.post('/api/admin/baserow-backup', {}, {
         headers: { Authorization: `Bearer ${adminToken}` }
       })
-
-      alert('Data imported successfully!')
-      fetchStats()
+      alert('Backup to Baserow completed successfully!')
       fetchBackupStatus()
     } catch (e) {
-      alert('Import failed: ' + e.message)
+      alert('Baserow backup failed: ' + e.message)
     } finally {
       setBackupLoading(false)
-      event.target.value = '' // Reset file input
     }
   }
 
@@ -237,23 +228,23 @@ export default function AdminDashboard() {
                   )}
                 </div>
               )}
-              {supabaseStatus && (
+              {baserowStatus && (
                 <div className="text-xs t-faint mt-3 space-y-2">
                   <div>
                     <span className="font-semibold">Baserow status:</span>
-                    <span className={`ml-2 ${supabaseStatus.configured ? 'text-emerald-300' : 'text-rose-300'}`}>
-                      {supabaseStatus.message || (supabaseStatus.configured ? 'Configured' : 'Not configured')}
+                    <span className={`ml-2 ${baserowStatus.configured ? 'text-emerald-300' : 'text-rose-300'}`}>
+                      {baserowStatus.message || (baserowStatus.configured ? 'Configured' : 'Not configured')}
                     </span>
                   </div>
-                  {supabaseStatus.tableId && (
+                  {baserowStatus.tableId && (
                     <div>
                       <span className="font-semibold">Table ID:</span>
-                      <span className="ml-2 text-gray-300">{supabaseStatus.tableId}</span>
+                      <span className="ml-2 text-gray-300">{baserowStatus.tableId}</span>
                     </div>
                   )}
-                  {supabaseStatus.checkedAt && (
+                  {baserowStatus.checkedAt && (
                     <div className="text-[11px] t-faint">
-                      Last checked: {new Date(supabaseStatus.checkedAt).toLocaleString()}
+                      Last checked: {new Date(baserowStatus.checkedAt).toLocaleString()}
                     </div>
                   )}
                 </div>
@@ -267,6 +258,14 @@ export default function AdminDashboard() {
               >
                 <span>📤</span>
                 {backupLoading ? 'Exporting...' : 'Export Data'}
+              </button>
+              <button
+                onClick={handleBaserowBackup}
+                disabled={backupLoading}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white text-sm font-semibold rounded-lg transition-colors flex items-center gap-2"
+              >
+                <span>☁️</span>
+                {backupLoading ? 'Backing up...' : 'Backup to Baserow'}
               </button>
               <label className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-lg transition-colors cursor-pointer flex items-center gap-2">
                 <span>📥</span>

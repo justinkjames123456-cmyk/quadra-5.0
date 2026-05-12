@@ -731,6 +731,14 @@ function importData(data) {
     await autoRestore()
     await ensureSupabaseDatabaseMirror()
     await autoBackup()
+    // Also backup to Baserow immediately if configured
+    if (useBaserowBackup) {
+      const collegeCount = db.prepare('SELECT COUNT(*) as count FROM colleges').get().count
+      const matchCount = db.prepare('SELECT COUNT(*) as count FROM matches').get().count
+      if (collegeCount > 0 || matchCount > 0) {
+        await backupToBaserow()
+      }
+    }
   } catch (error) {
     console.error('❌ Backup/restore initialization failed:', error.message || error)
   }
@@ -1332,6 +1340,15 @@ app.post('/api/admin/baserow-row', async (req, res) => {
     res.json({ row })
   } catch (error) {
     res.status(500).json({ error: 'Failed to create Baserow row: ' + error.message })
+  }
+})
+
+app.post('/api/admin/baserow-backup', async (req, res) => {
+  try {
+    await backupToBaserow()
+    res.json({ success: true, message: 'Backup to Baserow completed' })
+  } catch (error) {
+    res.status(500).json({ error: 'Baserow backup failed: ' + error.message })
   }
 })
 
