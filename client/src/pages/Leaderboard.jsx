@@ -162,11 +162,10 @@ export default function Leaderboard() {
         {/* Points system */}
         <div className="t-card rounded-xl p-5">
           <h3 className="font-bold mb-3 text-sm">📋 Points System</h3>
-          <div className="grid grid-cols-3 gap-3 text-sm">
+          <div className="grid grid-cols-2 gap-3 text-sm">
             {[
-              { dot: 'bg-green-500', label: 'Win',  val: '3 pts' },
-              { dot: 'bg-yellow-500', label: 'Draw', val: '1 pt'  },
-              { dot: 'bg-red-500',   label: 'Loss', val: '0 pts' },
+              { dot: 'bg-yellow-500', label: 'Winner',  val: '10 pts' },
+              { dot: 'bg-gray-500',   label: 'Runner-up', val: '6 pts'  },
             ].map(p => (
               <div key={p.label} className="flex items-center gap-2">
                 <span className={`w-2.5 h-2.5 rounded-full ${p.dot}`} />
