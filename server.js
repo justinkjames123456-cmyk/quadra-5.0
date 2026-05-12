@@ -240,8 +240,8 @@ async function restoreFromSupabaseDbIfEmpty() {
 
   const localCollegeCount = db.prepare('SELECT COUNT(*) as count FROM colleges').get().count
   const localMatchCount = db.prepare('SELECT COUNT(*) as count FROM matches').get().count
-  const localSportCount = db.prepare('SELECT COUNT(*) as count FROM sports').get().count
-  if (localCollegeCount > 0 || localMatchCount > 0 || localSportCount > 0) return false
+  // We allow restore from Supabase even if local sports are seeded on a fresh container.
+  if (localCollegeCount > 0 || localMatchCount > 0) return false
 
   try {
     const { rows: sports } = await supabaseDb.query('SELECT * FROM sports ORDER BY sort_order ASC, name ASC')
