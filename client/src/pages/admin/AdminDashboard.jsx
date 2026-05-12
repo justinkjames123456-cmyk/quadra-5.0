@@ -33,7 +33,7 @@ export default function AdminDashboard() {
         headers: { Authorization: `Bearer ${adminToken}` }
       })
       setBackupStatus(res.data)
-      setSupabaseStatus(res.data.supabase || null)
+      setSupabaseStatus(res.data.baserow || null)
     } catch (e) { console.error('Backup status error:', e) }
   }
 
@@ -240,25 +240,15 @@ export default function AdminDashboard() {
               {supabaseStatus && (
                 <div className="text-xs t-faint mt-3 space-y-2">
                   <div>
-                    <span className="font-semibold">Supabase health:</span>
-                    <span className={`ml-2 ${supabaseStatus.dbConnected ? 'text-emerald-300' : 'text-rose-300'}`}>
-                      {supabaseStatus.connectionMessage || (supabaseStatus.dbConnected ? 'Connected' : 'Disconnected')}
+                    <span className="font-semibold">Baserow status:</span>
+                    <span className={`ml-2 ${supabaseStatus.configured ? 'text-emerald-300' : 'text-rose-300'}`}>
+                      {supabaseStatus.message || (supabaseStatus.configured ? 'Configured' : 'Not configured')}
                     </span>
                   </div>
-                  <div>
-                    <span className="font-semibold">DB:</span>
-                    <span className={`ml-2 ${supabaseStatus.dbConfigured ? 'text-emerald-300' : 'text-rose-300'}`}>
-                      {supabaseStatus.dbConfigured ? 'Configured' : 'Not configured'}
-                    </span>
-                    <span className="ml-3">Storage:</span>
-                    <span className={`ml-2 ${supabaseStatus.backupConfigured ? 'text-emerald-300' : 'text-rose-300'}`}>
-                      {supabaseStatus.backupConfigured ? 'Configured' : 'Not configured'}
-                    </span>
-                  </div>
-                  {supabaseStatus.projectUrl && (
+                  {supabaseStatus.tableId && (
                     <div>
-                      <span className="font-semibold">Project:</span>
-                      <span className="ml-2 text-gray-300 break-all">{supabaseStatus.projectUrl}</span>
+                      <span className="font-semibold">Table ID:</span>
+                      <span className="ml-2 text-gray-300">{supabaseStatus.tableId}</span>
                     </div>
                   )}
                   {supabaseStatus.checkedAt && (
@@ -297,8 +287,8 @@ export default function AdminDashboard() {
         <div className="t-card rounded-xl p-4 sm:p-6 mb-8">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
             <div>
-              <h3 className="font-bold text-sm sm:text-base">Supabase Sync History</h3>
-              <p className="text-xs sm:text-sm t-muted">See the latest Supabase mirror operations and whether each sync succeeded.</p>
+              <h3 className="font-bold text-sm sm:text-base">Baserow Sync History</h3>
+              <p className="text-xs sm:text-sm t-muted">See the latest Baserow operations and whether each sync succeeded.</p>
             </div>
             <button
               onClick={fetchSyncHistory}

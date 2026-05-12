@@ -174,6 +174,9 @@ const useSupabaseDb = Boolean(SUPABASE_DB_URL)
 const BASEROW_API_BASE = 'https://api.baserow.io/api/'
 const BASEROW_API_TOKEN = 'DCgxPzLBqG5BmGIZbl5I7Xuw9Yek5Lyv'
 const BASEROW_TABLE_ID = 971586
+
+// Use Baserow as primary backup instead of Supabase
+const useBaserowBackup = true
 const supabase = useSupabaseBackup
   ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
   : null
@@ -471,6 +474,8 @@ function emitSupabaseSyncStatus(payload) {
   }
   recordSupabaseSyncEvent(event)
   io.emit('supabase-sync-status', event)
+  // Also log to Baserow
+  logToBaserow(`Sync: ${payload.operation}`, payload.message || 'Sync operation completed')
 }
 
 // ── Baserow Integration ────────────────────────
@@ -572,55 +577,43 @@ async function ensureSupabaseBucket() {
   }
 }
 
-async function backupToSupabase() {
-  if (!supabase) return
-
+async function backupToBaserow() {
+  if (!useBaserowBackup) return
   try {
-    await ensureSupabaseBucket()
-    const backupData = exportData()
-    const json = JSON.stringify(backupData, null, 2)
-    const file = Buffer.from(json, 'utf8')
-    const { error } = await supabase.storage.from(SUPABASE_BUCKET).upload('data-backup.json', file, {
-      contentType: 'application/json',
-      upsert: true,
-    })
-    if (error) {
-      throw error
-    }
-    console.log('📦 Supabase backup completed')
+    const data = exportData()
+    await createBaserowRow('TournamentBackup', JSON.stringify(data))
+    console.log('📦 Baserow backup created')
   } catch (error) {
-    console.error('❌ Supabase backup failed:', error.message || error)
+    console.error('❌ Baserow backup failed:', error.message || error)
   }
 }
 
-function scheduleSupabaseBackup() {
-  if (!supabase) return
-  backupToSupabase().catch(error => console.error('Scheduled Supabase backup failed:', error.message || error))
+function scheduleBaserowBackup() {
+  if (!useBaserowBackup) return
+  backupToBaserow().catch(error => console.error('Scheduled Baserow backup failed:', error.message || error))
 }
 
-async function restoreFromSupabaseIfEmpty() {
-  if (!supabase) return false
+async function restoreFromBaserowIfEmpty() {
+  if (!useBaserowBackup) return false
 
   const collegeCount = db.prepare('SELECT COUNT(*) as count FROM colleges').get().count
   const matchCount = db.prepare('SELECT COUNT(*) as count FROM matches').get().count
   if (collegeCount > 0 || matchCount > 0) return false
 
   try {
-    await ensureSupabaseBucket()
-    const { data, error } = await supabase.storage.from(SUPABASE_BUCKET).download('data-backup.json')
-    if (error) {
-      if (error.status !== 404) {
-        console.error('Supabase restore failed:', error.message || error)
-      }
-      return false
-    }
-    const body = await data.text()
-    const backupData = JSON.parse(body)
-    importData(backupData)
-    console.log('🔄 Restored from Supabase backup')
+    const rows = await getBaserowRows()
+    const backupRows = rows.results.filter(row => row.Item === 'TournamentBackup')
+    if (backupRows.length === 0) return false
+
+    // Get the latest backup
+    const latestBackup = backupRows.sort((a, b) => new Date(b.Timestamp) - new Date(a.Timestamp))[0]
+    const data = JSON.parse(latestBackup.Details)
+
+    importData(data)
+    console.log('🔄 Restored from Baserow backup')
     return true
   } catch (error) {
-    console.error('❌ Supabase restore failed:', error.message || error)
+    console.error('❌ Baserow restore failed:', error.message || error)
     return false
   }
 }
@@ -630,8 +623,8 @@ async function autoRestore() {
     const restoredFromSupabaseDb = await restoreFromSupabaseDbIfEmpty()
     if (restoredFromSupabaseDb) return
 
-    const restoredFromSupabase = await restoreFromSupabaseIfEmpty()
-    if (restoredFromSupabase) return
+    const restoredFromBaserow = await restoreFromBaserowIfEmpty()
+    if (restoredFromBaserow) return
 
     const backupPath = path.join(__dirname, 'data-backup.json')
     if (fs.existsSync(backupPath)) {
@@ -659,7 +652,7 @@ async function autoBackup() {
       const backupPath = path.join(__dirname, 'data-backup.json')
       fs.writeFileSync(backupPath, JSON.stringify(backupData, null, 2))
       console.log('📦 Auto-backup created:', backupPath)
-      await backupToSupabase()
+      await backupToBaserow()
     }
   } catch (error) {
     console.error('❌ Auto-backup failed:', error.message || error)
@@ -1302,15 +1295,11 @@ app.get('/api/admin/backup-status', async (req, res) => {
     res.json({
       backup: backupInfo,
       current: currentData,
-      supabase: {
-        backupConfigured: useSupabaseBackup,
-        dbConfigured: useSupabaseDb,
-        dbConnected: !!dbConnected,
+      baserow: {
+        configured: useBaserowBackup,
+        tableId: BASEROW_TABLE_ID,
         checkedAt: new Date().toISOString(),
-        projectUrl: SUPABASE_URL ? SUPABASE_URL.replace(/\/$/, '') : null,
-        connectionMessage: useSupabaseDb
-          ? (dbConnected ? 'Postgres connected' : 'Postgres configured but disconnected')
-          : 'Supabase Postgres not configured'
+        message: useBaserowBackup ? 'Baserow backup configured' : 'Baserow backup not configured'
       }
     })
   } catch (error) {
