@@ -175,15 +175,18 @@ const supabase = useSupabaseBackup
 const supabaseDb = useSupabaseDb
   ? new Client({ connectionString: SUPABASE_DB_URL, ssl: { rejectUnauthorized: false } })
   : null
+let supabaseDbConnected = false
 
 async function connectSupabaseDb() {
   if (!supabaseDb) return false
   try {
     await supabaseDb.connect()
     await ensureSupabaseDbTables()
+    supabaseDbConnected = true
     console.log('✅ Supabase Postgres connected')
     return true
   } catch (error) {
+    supabaseDbConnected = false
     console.error('❌ Supabase Postgres connection failed:', error.message || error)
     return false
   }
@@ -1156,8 +1159,13 @@ app.post('/api/admin/import', async (req, res) => {
 })
 
 // Get backup status
-app.get('/api/admin/backup-status', (req, res) => {
+app.get('/api/admin/backup-status', async (req, res) => {
   try {
+    let dbConnected = supabaseDbConnected
+    if (useSupabaseDb && !supabaseDbConnected) {
+      dbConnected = await connectSupabaseDb()
+    }
+
     const backupPath = path.join(__dirname, 'data-backup.json')
     const hasBackup = fs.existsSync(backupPath)
 
@@ -1183,7 +1191,12 @@ app.get('/api/admin/backup-status', (req, res) => {
 
     res.json({
       backup: backupInfo,
-      current: currentData
+      current: currentData,
+      supabase: {
+        backupConfigured: useSupabaseBackup,
+        dbConfigured: useSupabaseDb,
+        dbConnected: !!dbConnected
+      }
     })
   } catch (error) {
     res.status(500).json({ error: 'Status check failed: ' + error.message })

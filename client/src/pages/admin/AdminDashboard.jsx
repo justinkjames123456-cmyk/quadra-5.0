@@ -10,6 +10,7 @@ export default function AdminDashboard() {
   const [sportsList, setSportsList] = useState([])
   const [loading, setLoading] = useState(true)
   const [backupStatus, setBackupStatus] = useState(null)
+  const [supabaseStatus, setSupabaseStatus] = useState(null)
   const [backupLoading, setBackupLoading] = useState(false)
   const [syncHistory, setSyncHistory] = useState([])
   const [historyLoading, setHistoryLoading] = useState(true)
@@ -32,6 +33,7 @@ export default function AdminDashboard() {
         headers: { Authorization: `Bearer ${adminToken}` }
       })
       setBackupStatus(res.data)
+      setSupabaseStatus(res.data.supabase || null)
     } catch (e) { console.error('Backup status error:', e) }
   }
 
@@ -233,6 +235,16 @@ export default function AdminDashboard() {
                   {backupStatus.backup && (
                     <span className="ml-2">• Backup: {backupStatus.backup.colleges} colleges, {backupStatus.backup.matches} matches</span>
                   )}
+                </div>
+              )}
+              {supabaseStatus && (
+                <div className="text-xs t-faint mt-3">
+                  <span className="font-semibold">Supabase status:</span>
+                  <span className={`ml-2 ${supabaseStatus.dbConnected ? 'text-emerald-300' : 'text-rose-300'}`}>
+                    {supabaseStatus.dbConnected ? 'Connected' : 'Disconnected'}
+                  </span>
+                  <span className="ml-3">DB {supabaseStatus.dbConfigured ? 'configured' : 'not configured'}</span>
+                  <span className="ml-3">Storage {supabaseStatus.backupConfigured ? 'configured' : 'not configured'}</span>
                 </div>
               )}
             </div>
