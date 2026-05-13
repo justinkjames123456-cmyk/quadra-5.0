@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import { useSocket } from '../../context/SocketContext'
 import ThemeToggle from '../../components/ThemeToggle'
+import AdminCollegePoints from '../../components/AdminCollegePoints'
 
 export default function AdminDashboard() {
   const navigate = useNavigate()
@@ -348,6 +349,9 @@ export default function AdminDashboard() {
             </div>
           )}
         </div>
+
+        {/* College Points Management */}
+        <AdminCollegePoints />
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <a href="/" target="_blank" rel="noopener noreferrer"

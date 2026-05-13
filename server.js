@@ -81,9 +81,17 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     full_name TEXT NOT NULL,
     short_name TEXT NOT NULL,
+    manual_points INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )
 `)
+
+// Add manual_points column if it doesn't exist (migration)
+try {
+  db.exec(`ALTER TABLE colleges ADD COLUMN manual_points INTEGER DEFAULT 0`)
+} catch (e) {
+  // Column already exists
+}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS matches (
@@ -170,7 +178,7 @@ if (collegeCount.count === 0) {
   console.log('Seeded initial colleges')
 }
 
-// ── Data Backup/Restore System ────────────────────────
+// Socket.io authentication middleware
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://mnofykldrbskjrvqfpxh.supabase.co'
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'sb_publishable_I_LM2e2eROhoUL7KvHB3Mw_iKmOFe_f'
 const SUPABASE_DB_URL = process.env.REMOTE_DB_URL || process.env.POSTGRESQL_ADDON_URI || process.env.SUPABASE_DB_URL || 'postgresql://postgres:Jaisilly%402008@db.mnofykldrbskjrvqfpxh.supabase.co:5432/postgres'
@@ -935,6 +943,48 @@ app.delete('/api/colleges/:id', async (req, res) => {
   res.json({ success: true, supabaseSync: syncStatus })
 })
 
+// Set manual points for a college (admin)
+app.post('/api/admin/colleges/:collegeId/points', (req, res) => {
+  const { collegeId } = req.params
+  const { points } = req.body
+
+  if (typeof points !== 'number' || points < 0) {
+    return res.status(400).json({ error: 'Points must be a non-negative number' })
+  }
+
+  try {
+    db.prepare('UPDATE colleges SET manual_points = ? WHERE id = ?').run(points, collegeId)
+    const college = db.prepare('SELECT * FROM colleges WHERE id = ?').get(collegeId)
+    io.emit('leaderboard-update')
+    res.json({ success: true, college })
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update points: ' + error.message })
+  }
+})
+
+// Add points to a college (admin)
+app.post('/api/admin/colleges/:collegeId/points/add', (req, res) => {
+  const { collegeId } = req.params
+  const { points } = req.body
+
+  if (typeof points !== 'number') {
+    return res.status(400).json({ error: 'Points must be a number' })
+  }
+
+  try {
+    const college = db.prepare('SELECT * FROM colleges WHERE id = ?').get(collegeId)
+    if (!college) return res.status(404).json({ error: 'College not found' })
+
+    const newPoints = Math.max(0, (college.manual_points || 0) + points)
+    db.prepare('UPDATE colleges SET manual_points = ? WHERE id = ?').run(newPoints, collegeId)
+    const updated = db.prepare('SELECT * FROM colleges WHERE id = ?').get(collegeId)
+    io.emit('leaderboard-update')
+    res.json({ success: true, college: updated })
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to add points: ' + error.message })
+  }
+})
+
 // Get all matches (with optional filters)
 app.get('/api/matches', (req, res) => {
   let query = `
@@ -1055,156 +1105,47 @@ app.delete('/api/matches/:id', async (req, res) => {
 
 // Get overall leaderboard
 app.get('/api/leaderboard/overall', (req, res) => {
-  const colleges = db.prepare('SELECT id, short_name FROM colleges').all()
+  const colleges = db.prepare('SELECT id, short_name, full_name, manual_points FROM colleges ORDER BY manual_points DESC').all()
 
-  const leaderboard = colleges.map(college => {
-    // Get all matches for this college
-    const matches = db.prepare(`
-      SELECT * FROM matches 
-      WHERE (team_a_id = ? OR team_b_id = ?) AND status = 'completed'
-    `).all(college.id, college.id)
-
-    let wins = 0, draws = 0, losses = 0
-
-    matches.forEach(match => {
-      if (match.winner_id === college.id) {
-        wins++
-      } else if (match.winner_id === null && match.score_a === match.score_b) {
-        draws++
-      } else {
-        losses++
-      }
-    })
-
-    const total_points = wins * 10 + (draws + losses) * 6
-
-    return {
-      id: college.id,
-      short_name: college.short_name,
-      played: matches.length,
-      wins,
-      draws,
-      losses,
-      total_points
-    }
-  })
-
-  // Sort by points descending
-  leaderboard.sort((a, b) => {
-    if (b.total_points !== a.total_points) return b.total_points - a.total_points
-    return b.wins - a.wins
-  })
+  const leaderboard = colleges.map((college, index) => ({
+    rank: index + 1,
+    id: college.id,
+    short_name: college.short_name,
+    full_name: college.full_name,
+    total_points: college.manual_points || 0
+  }))
 
   res.json(leaderboard)
 })
 
 // Get gender-specific leaderboard
 app.get('/api/leaderboard', (req, res) => {
-  const { gender } = req.query
-  const colleges = db.prepare('SELECT id, short_name FROM colleges').all()
+  const colleges = db.prepare('SELECT id, short_name, full_name, manual_points FROM colleges ORDER BY manual_points DESC').all()
 
-  const leaderboard = colleges.map(college => {
-    let query = `
-      SELECT * FROM matches
-      WHERE (team_a_id = ? OR team_b_id = ?) AND status = 'completed'
-    `
-    const params = [college.id, college.id]
+  const leaderboard = colleges.map((college, index) => ({
+    rank: index + 1,
+    id: college.id,
+    short_name: college.short_name,
+    full_name: college.full_name,
+    total_points: college.manual_points || 0
+  }))
 
-    if (gender) {
-      query += ' AND gender = ?'
-      params.push(gender)
-    }
-
-    const matches = db.prepare(query).all(...params)
-
-    let wins = 0, draws = 0, losses = 0
-
-    matches.forEach(match => {
-      if (match.winner_id === college.id) {
-        wins++
-      } else if (match.winner_id === null && match.score_a === match.score_b) {
-        draws++
-      } else {
-        losses++
-      }
-    })
-
-    const total_points = wins * 10 + (draws + losses) * 6
-
-    return {
-      id: college.id,
-      short_name: college.short_name,
-      played: matches.length,
-      wins,
-      draws,
-      losses,
-      total_points
-    }
-  })
-
-  // Filter out colleges with no matches
-  const filteredLeaderboard = leaderboard.filter(college => college.played > 0)
-
-  // Sort by points descending
-  filteredLeaderboard.sort((a, b) => {
-    if (b.total_points !== a.total_points) return b.total_points - a.total_points
-    return b.wins - a.wins
-  })
-
-  res.json(filteredLeaderboard)
+  res.json(leaderboard)
 })
 
 // Get sport-wise leaderboard
 app.get('/api/leaderboard/sport/:sport', (req, res) => {
-  const { sport } = req.params
-  const { gender } = req.query
-  const colleges = db.prepare('SELECT id, short_name FROM colleges').all()
+  const colleges = db.prepare('SELECT id, short_name, full_name, manual_points FROM colleges ORDER BY manual_points DESC').all()
 
-  const leaderboard = colleges.map(college => {
-    let query = `
-      SELECT * FROM matches 
-      WHERE sport = ? AND (team_a_id = ? OR team_b_id = ?) AND status = 'completed'
-    `
-    const params = [sport, college.id, college.id]
+  const leaderboard = colleges.map((college, index) => ({
+    rank: index + 1,
+    id: college.id,
+    short_name: college.short_name,
+    full_name: college.full_name,
+    total_points: college.manual_points || 0
+  }))
 
-    if (gender) {
-      query += ' AND gender = ?'
-      params.push(gender)
-    }
-
-    const matches = db.prepare(query).all(...params)
-
-    let wins = 0, draws = 0, losses = 0
-
-    matches.forEach(match => {
-      if (match.winner_id === college.id) {
-        wins++
-      } else if (match.winner_id === null && match.score_a === match.score_b) {
-        draws++
-      } else {
-        losses++
-      }
-    })
-
-    const total_points = wins * 10 + (draws + losses) * 6
-
-    return {
-      id: college.id,
-      short_name: college.short_name,
-      played: matches.length,
-      wins,
-      draws,
-      losses,
-      total_points
-    }
-  })
-
-  leaderboard.sort((a, b) => {
-    if (b.total_points !== a.total_points) return b.total_points - a.total_points
-    return b.wins - a.wins
-  })
-
-  res.json(leaderboard)
+  res.json(leaderboard.slice(0, 20))
 })
 
 // Score update via REST (admin panel uses this)
