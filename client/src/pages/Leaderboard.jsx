@@ -80,13 +80,13 @@ export default function Leaderboard() {
               </div>
             )}
 
-            {/* Full table */}
-            <div className="t-card rounded-2xl overflow-hidden mb-6 shadow-lg shadow-black/5">
+            {/* Desktop Table */}
+            <div className="hidden md:block t-card rounded-2xl overflow-hidden mb-6 shadow-lg shadow-black/5">
               <div className="px-4 py-4" style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-section)' }}>
                 <h3 className="font-bold text-sm">Standings — {leaderboard.length} colleges</h3>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[420px]">
+                <table className="w-full">
                   <thead style={{ background: 'var(--bg-section)', borderBottom: '1px solid var(--border)' }}>
                     <tr>
                       {['#','College','PNT',''].map(h => (
@@ -129,6 +129,47 @@ export default function Leaderboard() {
                   </tbody>
                 </table>
               </div>
+            </div>
+
+            {/* Mobile Cards */}
+            <div className="md:hidden space-y-3 mb-6">
+              {leaderboard.map((team, i) => (
+                <div
+                  key={team.id}
+                  onClick={() => navigate(`/college/${team.id}`)}
+                  className="t-card rounded-xl p-4 cursor-pointer transition duration-200 flex items-center justify-between"
+                  style={{ 
+                    border: `1px solid var(--border)`,
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(96,165,250,0.05)'}
+                  onMouseLeave={e => e.currentTarget.style.background = ''}>
+                  
+                  {/* Rank */}
+                  <div className="flex-shrink-0">
+                    <span className={`inline-flex items-center justify-center w-10 h-10 rounded-full text-sm font-bold ${
+                      i === 0 ? 'bg-yellow-400 text-black' :
+                      i === 1 ? 'bg-slate-400 text-black' :
+                      i === 2 ? 'bg-orange-500 text-black' : 'bg-slate-200 text-slate-700'
+                    }`}>
+                      {i < 3 ? ['🥇','🥈','🥉'][i] : i + 1}
+                    </span>
+                  </div>
+
+                  {/* Name and Full Name */}
+                  <div className="flex-1 min-w-0 px-3">
+                    <div className="font-semibold text-sm text-[var(--accent)]">{team.short_name}</div>
+                    <p className="text-xs t-faint truncate">{team.full_name}</p>
+                  </div>
+
+                  {/* Points - Always Visible */}
+                  <div className="flex-shrink-0 text-right">
+                    <p className="text-2xl font-black" style={{ color: 'var(--accent)' }}>
+                      {team.total_points}
+                    </p>
+                    <p className="text-xs t-faint">pts</p>
+                  </div>
+                </div>
+              ))}
             </div>
           </>
         )}
