@@ -56,7 +56,7 @@ export default function CollegeDetail() {
   const wins   = completed.filter(m => String(m.winner_id) === String(id)).length
   const draws  = completed.filter(m => !m.winner_id && m.score_a === m.score_b).length
   const losses = completed.length - wins - draws
-  const points = wins * 3 + draws
+  const points = college.manual_points ?? 0
 
   const filtered = activeFilter === 'all' ? matches
     : matches.filter(m => m.status === activeFilter)

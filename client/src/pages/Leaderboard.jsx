@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import axios from 'axios'
 
 export default function Leaderboard() {
+  const navigate = useNavigate()
   const [leaderboard, setLeaderboard] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedGender, setSelectedGender] = useState('all')
@@ -38,7 +39,7 @@ export default function Leaderboard() {
         </div>
 
         {/* Filter */}
-        <div className="flex justify-center mb-8">
+        <div className="flex flex-col items-center gap-2 mb-6">
           <div className="inline-flex gap-1 p-1.5 rounded-xl" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
             {FILTERS.map(f => (
               <button key={f.key} onClick={() => setSelectedGender(f.key)}
@@ -50,6 +51,7 @@ export default function Leaderboard() {
               </button>
             ))}
           </div>
+          <p className="text-xs t-muted">Click any row or college name to view full college details.</p>
         </div>
 
         {loading ? (
@@ -109,7 +111,7 @@ export default function Leaderboard() {
                 <table className="w-full min-w-[480px]">
                   <thead style={{ background: 'var(--bg-section)', borderBottom: '1px solid var(--border)' }}>
                     <tr>
-                      {['#','College','MP','W','D','L','PTS'].map(h => (
+                      {['#','College','MP','W','D','L','PTS',''].map(h => (
                         <th key={h}
                           className={`px-4 py-3 text-xs font-bold tracking-wider ${h === 'College' ? 'text-left' : 'text-center'}`}
                           style={{ color: h === 'PTS' ? 'var(--accent)' : 'var(--text-muted)' }}>
@@ -120,8 +122,9 @@ export default function Leaderboard() {
                   </thead>
                   <tbody>
                     {leaderboard.map((team, i) => (
-                      <tr key={team.id} className="transition-colors"
+                      <tr key={team.id} className="group cursor-pointer transition-colors"
                         style={{ borderTop: '1px solid var(--border)' }}
+                        onClick={() => navigate(`/college/${team.id}`)}
                         onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-card-hover)'}
                         onMouseLeave={e => e.currentTarget.style.background = ''}>
                         <td className="px-4 py-4 text-center">
@@ -135,21 +138,19 @@ export default function Leaderboard() {
                           </span>
                         </td>
                         <td className="px-4 py-4">
-                          <Link to={`/college/${team.id}`}
-                            className="font-bold hover:underline" style={{ color: 'var(--accent)' }}>
-                            {team.short_name}
-                          </Link>
+                          <div className="font-bold text-[0.95rem] text-[var(--accent)] underline decoration-2 underline-offset-4">{team.short_name}</div>
                           <p className="text-xs t-faint truncate max-w-[180px]">{team.full_name}</p>
                         </td>
                         <td className="px-4 py-4 text-center text-sm t-muted">{team.matches_played ?? team.played ?? 0}</td>
-                        <td className="px-4 py-4 text-center text-sm font-semibold text-green-500">{team.wins}</td>
-                        <td className="px-4 py-4 text-center text-sm font-semibold text-yellow-500">{team.draws}</td>
-                        <td className="px-4 py-4 text-center text-sm font-semibold text-red-500">{team.losses}</td>
+                        <td className="px-4 py-4 text-center text-sm font-semibold text-green-500">{team.wins ?? 0}</td>
+                        <td className="px-4 py-4 text-center text-sm font-semibold text-yellow-500">{team.draws ?? 0}</td>
+                        <td className="px-4 py-4 text-center text-sm font-semibold text-red-500">{team.losses ?? 0}</td>
                         <td className="px-4 py-4 text-center">
                           <span className="text-xl font-black" style={{ color: 'var(--accent)' }}>
                             {team.total_points}
                           </span>
                         </td>
+                        <td className="px-4 py-4 text-center text-sm text-[var(--accent)] font-semibold">View →</td>
                       </tr>
                     ))}
                   </tbody>

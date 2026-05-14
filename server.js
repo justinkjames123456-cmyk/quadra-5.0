@@ -1105,46 +1105,145 @@ app.delete('/api/matches/:id', async (req, res) => {
 
 // Get overall leaderboard
 app.get('/api/leaderboard/overall', (req, res) => {
-  const colleges = db.prepare('SELECT id, short_name, full_name, manual_points FROM colleges ORDER BY manual_points DESC').all()
+  const colleges = db.prepare('SELECT id, short_name, full_name, manual_points FROM colleges').all()
 
-  const leaderboard = colleges.map((college, index) => ({
-    rank: index + 1,
-    id: college.id,
-    short_name: college.short_name,
-    full_name: college.full_name,
-    total_points: college.manual_points || 0
-  }))
+  const leaderboard = colleges.map(college => {
+    const matches = db.prepare(`
+      SELECT * FROM matches
+      WHERE (team_a_id = ? OR team_b_id = ?) AND status = 'completed'
+    `).all(college.id, college.id)
 
+    let wins = 0, draws = 0, losses = 0
+    matches.forEach(match => {
+      if (match.winner_id === college.id) {
+        wins++
+      } else if (match.winner_id === null && match.score_a === match.score_b) {
+        draws++
+      } else {
+        losses++
+      }
+    })
+
+    return {
+      id: college.id,
+      short_name: college.short_name,
+      full_name: college.full_name,
+      played: matches.length,
+      wins,
+      draws,
+      losses,
+      total_points: college.manual_points || 0
+    }
+  })
+
+  leaderboard.sort((a, b) => {
+    if (b.total_points !== a.total_points) return b.total_points - a.total_points
+    return b.wins - a.wins
+  })
+
+  leaderboard.forEach((item, index) => { item.rank = index + 1 })
   res.json(leaderboard)
 })
 
 // Get gender-specific leaderboard
 app.get('/api/leaderboard', (req, res) => {
-  const colleges = db.prepare('SELECT id, short_name, full_name, manual_points FROM colleges ORDER BY manual_points DESC').all()
+  const { gender } = req.query
+  const colleges = db.prepare('SELECT id, short_name, full_name, manual_points FROM colleges').all()
 
-  const leaderboard = colleges.map((college, index) => ({
-    rank: index + 1,
-    id: college.id,
-    short_name: college.short_name,
-    full_name: college.full_name,
-    total_points: college.manual_points || 0
-  }))
+  const leaderboard = colleges.map(college => {
+    let query = `
+      SELECT * FROM matches
+      WHERE (team_a_id = ? OR team_b_id = ?) AND status = 'completed'
+    `
+    const params = [college.id, college.id]
+    if (gender) {
+      query += ' AND gender = ?'
+      params.push(gender)
+    }
 
+    const matches = db.prepare(query).all(...params)
+
+    let wins = 0, draws = 0, losses = 0
+    matches.forEach(match => {
+      if (match.winner_id === college.id) {
+        wins++
+      } else if (match.winner_id === null && match.score_a === match.score_b) {
+        draws++
+      } else {
+        losses++
+      }
+    })
+
+    return {
+      id: college.id,
+      short_name: college.short_name,
+      full_name: college.full_name,
+      played: matches.length,
+      wins,
+      draws,
+      losses,
+      total_points: college.manual_points || 0
+    }
+  })
+
+  leaderboard.sort((a, b) => {
+    if (b.total_points !== a.total_points) return b.total_points - a.total_points
+    return b.wins - a.wins
+  })
+
+  leaderboard.forEach((item, index) => { item.rank = index + 1 })
   res.json(leaderboard)
 })
 
 // Get sport-wise leaderboard
 app.get('/api/leaderboard/sport/:sport', (req, res) => {
-  const colleges = db.prepare('SELECT id, short_name, full_name, manual_points FROM colleges ORDER BY manual_points DESC').all()
+  const { sport } = req.params
+  const { gender } = req.query
+  const colleges = db.prepare('SELECT id, short_name, full_name, manual_points FROM colleges').all()
 
-  const leaderboard = colleges.map((college, index) => ({
-    rank: index + 1,
-    id: college.id,
-    short_name: college.short_name,
-    full_name: college.full_name,
-    total_points: college.manual_points || 0
-  }))
+  const leaderboard = colleges.map(college => {
+    let query = `
+      SELECT * FROM matches 
+      WHERE sport = ? AND (team_a_id = ? OR team_b_id = ?) AND status = 'completed'
+    `
+    const params = [sport, college.id, college.id]
 
+    if (gender) {
+      query += ' AND gender = ?'
+      params.push(gender)
+    }
+
+    const matches = db.prepare(query).all(...params)
+
+    let wins = 0, draws = 0, losses = 0
+    matches.forEach(match => {
+      if (match.winner_id === college.id) {
+        wins++
+      } else if (match.winner_id === null && match.score_a === match.score_b) {
+        draws++
+      } else {
+        losses++
+      }
+    })
+
+    return {
+      id: college.id,
+      short_name: college.short_name,
+      full_name: college.full_name,
+      played: matches.length,
+      wins,
+      draws,
+      losses,
+      total_points: college.manual_points || 0
+    }
+  })
+
+  leaderboard.sort((a, b) => {
+    if (b.total_points !== a.total_points) return b.total_points - a.total_points
+    return b.wins - a.wins
+  })
+
+  leaderboard.forEach((item, index) => { item.rank = index + 1 })
   res.json(leaderboard.slice(0, 20))
 })
 
