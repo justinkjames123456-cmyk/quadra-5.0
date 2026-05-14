@@ -1,32 +1,22 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
 
 export default function Leaderboard() {
   const navigate = useNavigate()
   const [leaderboard, setLeaderboard] = useState([])
   const [loading, setLoading] = useState(true)
-  const [selectedGender, setSelectedGender] = useState('all')
 
-  useEffect(() => { fetchLeaderboard() }, [selectedGender])
+  useEffect(() => { fetchLeaderboard() }, [])
 
   const fetchLeaderboard = async () => {
     setLoading(true)
     try {
-      const endpoint = selectedGender === 'all'
-        ? '/api/leaderboard/overall'
-        : `/api/leaderboard?gender=${selectedGender}`
-      const res = await axios.get(endpoint)
+      const res = await axios.get('/api/leaderboard/overall')
       setLeaderboard(res.data)
     } catch (e) { console.error(e) }
     finally { setLoading(false) }
   }
-
-  const FILTERS = [
-    { key: 'all',   label: 'Overall' },
-    { key: 'men',   label: '👨 Men' },
-    { key: 'women', label: '👩 Women' },
-  ]
 
   return (
     <div className="min-h-screen t-bg py-10 px-4">
@@ -35,23 +25,11 @@ export default function Leaderboard() {
         {/* Header */}
         <div className="text-center mb-10">
           <h1 className="text-4xl md:text-5xl font-black gradient-text mb-2">LEADERBOARD</h1>
-          <p className="t-muted">Overall college rankings based on match results</p>
+          <p className="t-muted">Overall college rankings based on manually assigned points</p>
         </div>
 
-        {/* Filter */}
-        <div className="flex flex-col items-center gap-2 mb-6">
-          <div className="inline-flex gap-1 p-1.5 rounded-xl" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-            {FILTERS.map(f => (
-              <button key={f.key} onClick={() => setSelectedGender(f.key)}
-                className="px-5 py-2 rounded-lg text-sm font-bold transition-all"
-                style={selectedGender === f.key
-                  ? { background: 'var(--accent)', color: '#000' }
-                  : { color: 'var(--text-muted)' }}>
-                {f.label}
-              </button>
-            ))}
-          </div>
-          <p className="text-xs t-muted">Click any row or college name to view full college details.</p>
+        <div className="text-center mb-6">
+          <p className="text-sm t-muted max-w-xl mx-auto">Overall college rankings based on manually assigned points. Click any row to view full college details.</p>
         </div>
 
         {loading ? (
@@ -103,18 +81,18 @@ export default function Leaderboard() {
             )}
 
             {/* Full table */}
-            <div className="t-card rounded-2xl overflow-hidden mb-6">
-              <div className="px-4 py-3" style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-section)' }}>
-                <h3 className="font-bold t-muted text-sm">Full Standings — {leaderboard.length} colleges</h3>
+            <div className="t-card rounded-2xl overflow-hidden mb-6 shadow-lg shadow-black/5">
+              <div className="px-4 py-4" style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-section)' }}>
+                <h3 className="font-bold text-sm">Standings — {leaderboard.length} colleges</h3>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[480px]">
+                <table className="w-full min-w-[420px]">
                   <thead style={{ background: 'var(--bg-section)', borderBottom: '1px solid var(--border)' }}>
                     <tr>
-                      {['#','College','MP','W','D','L','PTS',''].map(h => (
+                      {['#','College','PNT',''].map(h => (
                         <th key={h}
                           className={`px-4 py-3 text-xs font-bold tracking-wider ${h === 'College' ? 'text-left' : 'text-center'}`}
-                          style={{ color: h === 'PTS' ? 'var(--accent)' : 'var(--text-muted)' }}>
+                          style={{ color: h === 'PNT' ? 'var(--accent)' : 'var(--text-muted)' }}>
                           {h}
                         </th>
                       ))}
@@ -122,35 +100,30 @@ export default function Leaderboard() {
                   </thead>
                   <tbody>
                     {leaderboard.map((team, i) => (
-                      <tr key={team.id} className="group cursor-pointer transition-colors"
+                      <tr key={team.id} className="group cursor-pointer transition duration-200"
                         style={{ borderTop: '1px solid var(--border)' }}
                         onClick={() => navigate(`/college/${team.id}`)}
-                        onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-card-hover)'}
+                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(96,165,250,0.05)'}
                         onMouseLeave={e => e.currentTarget.style.background = ''}>
                         <td className="px-4 py-4 text-center">
-                          <span className={`w-8 h-8 rounded-full inline-flex items-center justify-center font-bold text-sm ${
+                          <span className={`inline-flex items-center justify-center w-9 h-9 rounded-full text-sm font-bold ${
                             i === 0 ? 'bg-yellow-400 text-black' :
                             i === 1 ? 'bg-slate-400 text-black' :
-                            i === 2 ? 'bg-orange-500 text-black' : ''
-                          }`}
-                            style={i >= 3 ? { background: 'var(--bg-section)', color: 'var(--text-muted)' } : {}}>
+                            i === 2 ? 'bg-orange-500 text-black' : 'bg-slate-200 text-slate-700'
+                          }`}>
                             {i < 3 ? ['🥇','🥈','🥉'][i] : i + 1}
                           </span>
                         </td>
                         <td className="px-4 py-4">
-                          <div className="font-bold text-[0.95rem] text-[var(--accent)] underline decoration-2 underline-offset-4">{team.short_name}</div>
-                          <p className="text-xs t-faint truncate max-w-[180px]">{team.full_name}</p>
+                          <div className="font-semibold text-base text-[var(--accent)]">{team.short_name}</div>
+                          <p className="text-xs t-faint truncate max-w-[220px]">{team.full_name}</p>
                         </td>
-                        <td className="px-4 py-4 text-center text-sm t-muted">{team.matches_played ?? team.played ?? 0}</td>
-                        <td className="px-4 py-4 text-center text-sm font-semibold text-green-500">{team.wins ?? 0}</td>
-                        <td className="px-4 py-4 text-center text-sm font-semibold text-yellow-500">{team.draws ?? 0}</td>
-                        <td className="px-4 py-4 text-center text-sm font-semibold text-red-500">{team.losses ?? 0}</td>
-                        <td className="px-4 py-4 text-center">
-                          <span className="text-xl font-black" style={{ color: 'var(--accent)' }}>
-                            {team.total_points}
-                          </span>
+                        <td className="px-4 py-4 text-center text-lg font-black" style={{ color: 'var(--accent)' }}>
+                          {team.total_points}
                         </td>
-                        <td className="px-4 py-4 text-center text-sm text-[var(--accent)] font-semibold">View →</td>
+                        <td className="px-4 py-4 text-center text-sm font-semibold text-[var(--accent)]">
+                          View →
+                        </td>
                       </tr>
                     ))}
                   </tbody>
